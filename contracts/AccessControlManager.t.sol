@@ -81,4 +81,54 @@ contract AccessControlManagerTest is Test {
         acm.renounceRole(oracleRole, oracle);
         assertFalse(acm.hasRole(oracleRole, oracle));
     }
+
+    event KybStatusUpdated(address indexed account, bool status, address indexed operator);
+
+    function test_SetKybStatus_Success() public {
+        vm.prank(admin);
+        acm.grantRole(kybManagerRole, kybManager);
+
+        vm.startPrank(kybManager);
+        vm.expectEmit(true, true, true, true);
+        emit KybStatusUpdated(alice, true, kybManager);
+        acm.setKybStatus(alice, true);
+        vm.stopPrank();
+
+        assertTrue(acm.isKybApproved(alice));
+    }
+
+    function test_SetKybStatus_AdminSuccess() public {
+        vm.prank(admin);
+        acm.setKybStatus(alice, true);
+        assertTrue(acm.isKybApproved(alice));
+    }
+
+    function test_SetKybStatusBatch_Success() public {
+        address[] memory accounts = new address[](2);
+        accounts[0] = address(0x6666);
+        accounts[1] = address(0x7777);
+
+        vm.prank(admin);
+        acm.setKybStatusBatch(accounts, true);
+
+        assertTrue(acm.isKybApproved(accounts[0]));
+        assertTrue(acm.isKybApproved(accounts[1]));
+    }
+
+    function test_RevertIf_ZeroAddressKybAccount() public {
+        vm.prank(admin);
+        vm.expectRevert(AccessControlManager.ZeroAddressKybAccount.selector);
+        acm.setKybStatus(address(0), true);
+    }
+
+    function test_RevertIf_UnauthorizedKybManager() public {
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                AccessControlManager.UnauthorizedKybOperator.selector,
+                alice
+            )
+        );
+        acm.setKybStatus(oracle, true);
+    }
 }
