@@ -104,4 +104,28 @@ contract HoloFiCardCollectionTest is Test {
         vm.expectRevert(abi.encodeWithSelector(HoloFiCardCollection.TokenDoesNotExist.selector, 999));
         cardCollection.verifyAttestation(999, RAW_DATA);
     }
+
+    function test_Transfer_UnlockedCard_Success() public {
+        vm.prank(minter);
+        uint256 tokenId = cardCollection.mintCard(user, TEST_ATTESTATION, "ipfs://QmTestHash");
+
+        address recipient = address(0x4444);
+        vm.prank(user);
+        cardCollection.transferFrom(user, recipient, tokenId);
+
+        assertEq(cardCollection.ownerOf(tokenId), recipient);
+    }
+
+    function test_RevertIf_TransferLockedCard() public {
+        vm.prank(minter);
+        uint256 tokenId = cardCollection.mintCard(user, TEST_ATTESTATION, "ipfs://QmTestHash");
+
+        vm.prank(admin);
+        cardCollection.setCardLock(tokenId, true);
+
+        address recipient = address(0x4444);
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiCardCollection.CardIsLocked.selector, tokenId));
+        cardCollection.transferFrom(user, recipient, tokenId);
+    }
 }

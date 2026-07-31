@@ -29,6 +29,7 @@ contract HoloFiCardCollection is ERC721URIStorage {
     error UnauthorizedMinter(address caller);
     error UnauthorizedLockOperator(address caller);
     error TokenDoesNotExist(uint256 tokenId);
+    error CardIsLocked(uint256 tokenId);
 
     constructor(
         string memory name,
@@ -40,6 +41,16 @@ contract HoloFiCardCollection is ERC721URIStorage {
         }
         acm = AccessControlManager(_acm);
         nextTokenId = 1;
+    }
+
+    function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address) {
+        address from = _ownerOf(tokenId);
+        if (from != address(0) && to != address(0)) {
+            if (cards[tokenId].isLocked) {
+                revert CardIsLocked(tokenId);
+            }
+        }
+        return super._update(to, tokenId, auth);
     }
 
     function mintCard(
