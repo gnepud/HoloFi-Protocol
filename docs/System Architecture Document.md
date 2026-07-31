@@ -59,7 +59,7 @@
 All vaulted TCG cards across all boutiques are minted within a **single, unified ERC-721 Collection** (`HoloFi Vaulted TCG Collection`).
 
 * **Transfer Restrictions (Permissioned ERC-721)**:
-To prevent collateral escape and enforce KYB/AML compliance, `transferFrom` and `safeTransferFrom` functions are overridden. NFTs can **only** be transferred between verified boutique wallets, the `HoloFiVaultLoanCore` contract, or the `HoloFiDutchAuction` contract.
+Retain standard OpenZeppelin ERC-721 transfer logic so NFTs transfer freely between standard wallets outside of loans, but disallow transfers if the NFT is locked under collateral staking (`isLocked == true`). Attempting to transfer a locked card reverts with `CardIsLocked(tokenId)`.
 
 
 * **On-Chain Data Model**:
