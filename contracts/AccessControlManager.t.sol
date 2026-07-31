@@ -43,6 +43,10 @@ contract AccessControlManagerTest is Test {
         assertEq(acm.getRoleAdmin(pauserRole), adminRole);
     }
 
+    function test_MinterRoleHierarchy() public view {
+        assertEq(acm.getRoleAdmin(acm.MINTER_ROLE()), acm.ADMIN_ROLE());
+    }
+
     function test_GrantAndRevokeRolesByAdmin() public {
         vm.startPrank(admin);
 
