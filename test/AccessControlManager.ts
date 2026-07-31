@@ -54,4 +54,42 @@ describe("AccessControlManager Integration Tests", function () {
       .to.be.revertedWithCustomError(acm, "AccessControlUnauthorizedAccount")
       .withArgs(user.address, adminRole);
   });
+
+  it("Should allow KYB manager or admin to update KYB status and emit event", async function () {
+    const { acm, admin, kybManager, user } = await networkHelpers.loadFixture(deployAcmFixture);
+    const kybRole = await acm.KYB_MANAGER_ROLE();
+    await acm.connect(admin).grantRole(kybRole, kybManager.address);
+
+    await expect(acm.connect(kybManager).setKybStatus(user.address, true))
+      .to.emit(acm, "KybStatusUpdated")
+      .withArgs(user.address, true, kybManager.address);
+
+    expect(await acm.isKybApproved(user.address)).to.be.true;
+  });
+
+  it("Should allow batch KYB status updates", async function () {
+    const { acm, admin, user, oracle } = await networkHelpers.loadFixture(deployAcmFixture);
+
+    await acm.connect(admin).setKybStatusBatch([user.address, oracle.address], true);
+
+    expect(await acm.isKybApproved(user.address)).to.be.true;
+    expect(await acm.isKybApproved(oracle.address)).to.be.true;
+  });
+
+  it("Should revert when unauthorized user attempts to set KYB status", async function () {
+    const { acm, user, oracle } = await networkHelpers.loadFixture(deployAcmFixture);
+
+    await expect(acm.connect(user).setKybStatus(oracle.address, true))
+      .to.be.revertedWithCustomError(acm, "UnauthorizedKybOperator")
+      .withArgs(user.address);
+  });
+
+  it("Should revert when setting KYB status for zero address", async function () {
+    const { acm, admin } = await networkHelpers.loadFixture(deployAcmFixture);
+
+    await expect(
+      acm.connect(admin).setKybStatus(ethers.ZeroAddress, true)
+    ).to.be.revertedWithCustomError(acm, "ZeroAddressKybAccount");
+  });
 });
+
