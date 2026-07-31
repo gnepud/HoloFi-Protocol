@@ -88,6 +88,10 @@ AccessControlManager public immutable acm;
 - Reverts `TokenDoesNotExist(tokenId)` if `_ownerOf(tokenId) == address(0)`.
 - Returns `cards[tokenId]`.
 
+#### `verifyAttestation(uint256 tokenId, bytes32 attestationHash) external view returns (bool)`
+- Reverts `TokenDoesNotExist(tokenId)` if `_ownerOf(tokenId) == address(0)`.
+- Returns `cards[tokenId].attestationHash == attestationHash`.
+
 ---
 
 ## 3. Testing Strategy
@@ -100,13 +104,14 @@ AccessControlManager public immutable acm;
 5. `test_RevertIf_ZeroAddressRecipient`: Verify minting to `address(0)` reverts.
 6. `test_RevertIf_InvalidAttestationHash`: Verify minting with `bytes32(0)` attestationHash reverts.
 7. `test_SetCardLock_Success`: Verify admin can lock/unlock a card.
-8. `test_RevertIf_NonExistentToken`: Verify queries on non-existent token revert.
+8. `test_VerifyAttestation_Success`: Verify `verifyAttestation` returns true for matching attestation hash and false for mismatched hash.
+9. `test_RevertIf_NonExistentToken`: Verify queries (`getCard`, `setCardLock`, `verifyAttestation`) on non-existent token revert.
 
 ### 3.2 TypeScript Integration Tests (`test/HoloFiCardCollection.ts`)
 1. Deploy `AccessControlManager` and `HoloFiCardCollection` in Hardhat 3 fixture.
 2. Grant `MINTER_ROLE` to minter account using `acm.grantRole`.
 3. Mint card, verify `CardMinted` event emission and metadata properties.
-4. Verify token URI resolution.
+4. Verify token URI resolution and `verifyAttestation`.
 
 ---
 
