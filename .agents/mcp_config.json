@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "linear": {
+      "command": "",
+      "args": null,
+      "cwd": "",
+      "env": null,
+      "serverUrl": "https://mcp.linear.app/mcp"
+    }
+  }
+}
