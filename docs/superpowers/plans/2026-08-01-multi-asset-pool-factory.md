@@ -12,7 +12,7 @@
 
 - Use Solidity version `^0.8.28`
 - Follow Hardhat 3 ESM standards and `network.create()` API for TypeScript tests
-- If the commit relates to any Linear issue → Must use closing magic words for closing commits or non-closing magic words for non-closing commits. Refer to [`AGENTS.md`](file:///Users/gnepud/projects/holofi_protocol/AGENTS.md) for the full list of allowed magic words and formatting rules.
+- If the commit relates to any Linear issue → Must use closing magic words for closing commits or non-closing magic words for non-closing commits.
 - Always run `npx hardhat build && npx tsc --noEmit && npx hardhat test` for verification before completing any task
 
 ---
