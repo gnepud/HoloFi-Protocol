@@ -150,9 +150,8 @@ Update `contracts/HoloFiVaultLoanCore.sol`:
 
     function getPendingInterest(uint256 vaultId) public view returns (uint256) {
         CollateralVault memory vault = vaults[vaultId];
-        if (vault.principalDebt == 0 || vault.lastInterestUpdate == 0) return 0;
         uint256 dt = block.timestamp - vault.lastInterestUpdate;
-        if (dt == 0) return 0;
+        if (dt == 0 || vault.principalDebt == 0) return 0;
 
         return (vault.principalDebt * borrowRateBpsPerYear * dt) / (BPS_DENOMINATOR * SECONDS_PER_YEAR);
     }

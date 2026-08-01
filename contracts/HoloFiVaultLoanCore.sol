@@ -29,9 +29,30 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     mapping(uint256 => uint256) public nftVaultId;
     uint256 public nextVaultId = 1;
 
+    uint256 public constant BPS_DENOMINATOR = 10000;
+    uint256 public constant SECONDS_PER_YEAR = 365 days;
+    uint256 public constant HEALTH_FACTOR_PRECISION = 1e18;
+
+    uint256 public maxLtvBps = 5000;                // Max LTV: 50.00%
+    uint256 public liquidationThresholdBps = 7000; // Liquidation Threshold: 70.00%
+    uint256 public liquidationPenaltyBps = 1000;   // Liquidation Penalty: 10.00%
+    uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
+
     event VaultCreated(uint256 indexed vaultId, address indexed owner);
     event CollateralDeposited(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
     event CollateralWithdrawn(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
+    event RiskParametersUpdated(
+        uint256 maxLtvBps,
+        uint256 liquidationThresholdBps,
+        uint256 liquidationPenaltyBps,
+        uint256 borrowRateBpsPerYear
+    );
+    event InterestAccrued(
+        uint256 indexed vaultId,
+        uint256 interestAccrued,
+        uint256 totalAccumulatedInterest,
+        uint256 timestamp
+    );
 
     error ZeroAddressACM();
     error ZeroAddressNFT();
@@ -42,6 +63,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error EmptyTokenIdsList();
     error TokenAlreadyInVault(uint256 tokenId, uint256 existingVaultId);
     error TokenNotInVault(uint256 tokenId, uint256 vaultId);
+    error InvalidRiskParameters();
+    error UnauthorizedAdmin(address caller);
 
     constructor(address _acm, address _nftCollection) {
         if (_acm == address(0)) {
@@ -52,6 +75,69 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         }
         acm = AccessControlManager(_acm);
         nftCollection = HoloFiCardCollection(_nftCollection);
+    }
+
+    function setRiskParameters(
+        uint256 _maxLtvBps,
+        uint256 _liquidationThresholdBps,
+        uint256 _liquidationPenaltyBps,
+        uint256 _borrowRateBpsPerYear
+    ) external {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedAdmin(msg.sender);
+        }
+        if (_maxLtvBps > _liquidationThresholdBps || _liquidationThresholdBps > BPS_DENOMINATOR) {
+            revert InvalidRiskParameters();
+        }
+
+        maxLtvBps = _maxLtvBps;
+        liquidationThresholdBps = _liquidationThresholdBps;
+        liquidationPenaltyBps = _liquidationPenaltyBps;
+        borrowRateBpsPerYear = _borrowRateBpsPerYear;
+
+        emit RiskParametersUpdated(_maxLtvBps, _liquidationThresholdBps, _liquidationPenaltyBps, _borrowRateBpsPerYear);
+    }
+
+    function accrueInterest(uint256 vaultId) public {
+        CollateralVault storage vault = vaults[vaultId];
+        uint256 dt = block.timestamp - vault.lastInterestUpdate;
+        if (dt == 0) return;
+
+        if (vault.principalDebt > 0) {
+            uint256 interestNew = (vault.principalDebt * borrowRateBpsPerYear * dt) /
+                (BPS_DENOMINATOR * SECONDS_PER_YEAR);
+            vault.accumulatedInterest += interestNew;
+            emit InterestAccrued(vaultId, interestNew, vault.accumulatedInterest, block.timestamp);
+        }
+        vault.lastInterestUpdate = block.timestamp;
+    }
+
+    function getPendingInterest(uint256 vaultId) public view returns (uint256) {
+        CollateralVault memory vault = vaults[vaultId];
+        uint256 dt = block.timestamp - vault.lastInterestUpdate;
+        if (dt == 0 || vault.principalDebt == 0) return 0;
+
+        return (vault.principalDebt * borrowRateBpsPerYear * dt) / (BPS_DENOMINATOR * SECONDS_PER_YEAR);
+    }
+
+    function getTotalDebt(uint256 vaultId) public view returns (uint256) {
+        CollateralVault memory vault = vaults[vaultId];
+        return vault.principalDebt + vault.accumulatedInterest + getPendingInterest(vaultId);
+    }
+
+    function calculateHealthFactor(uint256 vaultFmv, uint256 totalDebt) public view returns (uint256) {
+        if (totalDebt == 0) {
+            return type(uint256).max;
+        }
+        return (vaultFmv * liquidationThresholdBps * HEALTH_FACTOR_PRECISION) / (totalDebt * BPS_DENOMINATOR);
+    }
+
+    function getHealthFactor(uint256 vaultId, uint256 vaultFmv) public view returns (uint256) {
+        return calculateHealthFactor(vaultFmv, getTotalDebt(vaultId));
+    }
+
+    function getMaxBorrowCapacity(uint256 vaultFmv) public view returns (uint256) {
+        return (vaultFmv * maxLtvBps) / BPS_DENOMINATOR;
     }
 
     function onERC721Received(

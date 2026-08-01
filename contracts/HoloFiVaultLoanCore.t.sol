@@ -176,4 +176,75 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         );
         loanCore.withdrawCollateral(vaultId, withdrawTokens);
     }
+
+    function test_SetRiskParameters_Success() public {
+        vm.prank(admin);
+        loanCore.setRiskParameters(4000, 6000, 1500, 600);
+
+        assertEq(loanCore.maxLtvBps(), 4000);
+        assertEq(loanCore.liquidationThresholdBps(), 6000);
+        assertEq(loanCore.liquidationPenaltyBps(), 1500);
+        assertEq(loanCore.borrowRateBpsPerYear(), 600);
+    }
+
+    function test_RevertIf_SetRiskParameters_Unauthorized() public {
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.UnauthorizedAdmin.selector, unauthorized));
+        loanCore.setRiskParameters(4000, 6000, 1500, 600);
+    }
+
+    function test_RevertIf_SetRiskParameters_InvalidParameters() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.InvalidRiskParameters.selector));
+        loanCore.setRiskParameters(8000, 7000, 1000, 500); // LTV > Liquidation Threshold
+    }
+
+    function test_GetMaxBorrowCapacity() public view {
+        uint256 fmv = 10_000 * 1e6; // $10,000 USDC
+        uint256 maxBorrow = loanCore.getMaxBorrowCapacity(fmv);
+        assertEq(maxBorrow, 5_000 * 1e6); // 50% LTV = $5,000 USDC
+    }
+
+    function test_CalculateHealthFactor_ZeroDebt() public view {
+        uint256 hf = loanCore.calculateHealthFactor(10_000 * 1e6, 0);
+        assertEq(hf, type(uint256).max);
+    }
+
+    function test_CalculateHealthFactor_AboveAndBelowOne() public view {
+        uint256 fmv = 10_000 * 1e6;
+        // Liquidation Threshold = 70% -> Max collateral value for HF=1.0 is $7,000
+
+        // Safe debt = $5,000 -> HF = (10,000 * 0.7) / 5,000 = 1.4
+        uint256 safeHf = loanCore.calculateHealthFactor(fmv, 5_000 * 1e6);
+        assertEq(safeHf, 1.4e18);
+
+        // Undercollateralized debt = $8,000 -> HF = (10,000 * 0.7) / 8,000 = 0.875
+        uint256 unsafeHf = loanCore.calculateHealthFactor(fmv, 8_000 * 1e6);
+        assertEq(unsafeHf, 0.875e18);
+    }
+
+    function test_AccrueInterest_TimeWarp() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        // Set principalDebt to $10,000 USDC (10_000 * 1e6) via vm.store
+        bytes32 baseSlot = keccak256(abi.encode(vaultId, uint256(0)));
+        vm.store(address(loanCore), bytes32(uint256(baseSlot) + 3), bytes32(uint256(10_000 * 1e6)));
+        vm.store(address(loanCore), bytes32(uint256(baseSlot) + 5), bytes32(uint256(block.timestamp)));
+
+        // Warp time by 1 year (365 days)
+        vm.warp(block.timestamp + 365 days);
+
+        // Pending interest should be 5% of 10,000 USDC = 500 USDC
+        uint256 pending = loanCore.getPendingInterest(vaultId);
+        assertEq(pending, 500 * 1e6);
+
+        // Accrue interest
+        loanCore.accrueInterest(vaultId);
+
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
+        assertEq(vault.accumulatedInterest, 500 * 1e6);
+        assertEq(loanCore.getPendingInterest(vaultId), 0);
+        assertEq(loanCore.getTotalDebt(vaultId), 10_500 * 1e6);
+    }
 }
