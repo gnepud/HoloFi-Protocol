@@ -38,12 +38,12 @@
 │  ┌────────────────────────┐         ┌─────────────────────────┐         ┌──────────────────────────┐   │
 │  │  HoloFiCardCollection  │         │   HoloFiVaultLoanCore   │         │  HoloFiLendingPool       │   │
 │  │ (Single Global Coll.)  │◄───────►│   (Collateral Vaults)   │◄───────►│ (Generic ERC-4626 Pool)  │   │
-│  └────────────────────────┘         └────────────┬────────────┘         └──────────────────────────┘   │
-│                                                  │                                                     │
-│                                                  │ Trigger Liquidation                                 │
-│                                                  ▼                                                     │
-│                                     ┌─────────────────────────┐                                        │
-│                                     │  HoloFiDutchAuction     │                                        │
+│  └────────────────────────┘         └────────────┬────────────┘         └────────────▲─────────────┘   │
+│                                                  │                                   │ Deploys Pools   │
+│                                                  │ Trigger Liquidation  ┌────────────┴─────────────┐   │
+│                                                  ▼                      │ HoloFiLendingPoolFactory │   │
+│                                     ┌─────────────────────────┐         │  (Multi-Asset Factory)   │   │
+│                                     │  HoloFiDutchAuction     │         └──────────────────────────┘   │
 │                                     │  (Vault Liquidation)    │                                        │
 │                                     └─────────────────────────┘                                        │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -212,6 +212,12 @@ The `HoloFiLendingPool` is a **generic, permissioned ERC-4626 yield-bearing liqu
 $$\text{Asset}_{\text{available}} = \text{Balance}_{\text{Asset}}$$
 
   The contract throws custom error `InsufficientVaultLiquidity(available, required)` and reverts the transaction.
+
+* **Multi-Asset Pool Factory (`HoloFiLendingPoolFactory`)**:
+  - Centralized factory for deploying and registering permissioned `HoloFiLendingPool` instances.
+  - Pool deployment via `createPool(IERC20 asset, string calldata name, string calldata symbol)` is restricted to `ADMIN_ROLE` in `AccessControlManager`.
+  - Maintains an on-chain lookup mapping `mapping(address => address) public getPool` (`underlyingAsset => poolAddress`) and array `address[] public allPools`.
+  - Prevents duplicate pool creation per underlying asset, reverting with `PoolAlreadyExists(underlyingAsset, existingPool)`.
 
 
 
