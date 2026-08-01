@@ -36,8 +36,8 @@
 │               │                                  │                                   │                 │
 │               ▼                                  ▼                                   ▼                 │
 │  ┌────────────────────────┐         ┌─────────────────────────┐         ┌──────────────────────────┐   │
-│  │  HoloFiCardCollection      │         │   HoloFiVaultLoanCore   │         │  HoloFiLendingVault      │   │
-│  │ (Single Global Coll.)  │◄───────►│   (Collateral Vaults)   │◄───────►│  (ERC-4626 USDC Pool)    │   │
+│  │  HoloFiCardCollection  │         │   HoloFiVaultLoanCore   │         │  HoloFiLendingPool       │   │
+│  │ (Single Global Coll.)  │◄───────►│   (Collateral Vaults)   │◄───────►│ (Generic ERC-4626 Pool)  │   │
 │  └────────────────────────┘         └────────────┬────────────┘         └──────────────────────────┘   │
 │                                                  │                                                     │
 │                                                  │ Trigger Liquidation                                 │
@@ -192,27 +192,26 @@ If this assertion fails, the transaction reverts with `InsufficientCollateralRat
 
 ---
 
-### 3.4. Shared Liquidity Pool: `HoloFiLendingVault` (ERC-4626)
+### 3.4. Shared Liquidity Pool: `HoloFiLendingPool` (Generic ERC-4626)
 
-Manages liquidity provided by Liquidity Providers (LPs) in USDC/EURC.
+The `HoloFiLendingPool` is a **generic, permissioned ERC-4626 yield-bearing liquidity pool** that manages liquidity provided by Liquidity Providers (LPs). It can be deployed for any standard single ERC-20 underlying asset (e.g. USDC, EURC, USDT, or WETH).
 
-* **Standard ERC-4626 & Permissioned Extension**:
-* `deposit`, `mint`, `withdraw`, and `redeem` verify the caller's KYB status in `AccessControlManager`.
+* **Generic ERC-4626 Vault & Share Tokens (`pToken`)**:
+  - Constructor takes `(IERC20 asset_, string memory name_, string memory symbol_, address _acm)`.
+  - Standard `deposit`, `mint`, `withdraw`, and `redeem` functions issue yield-bearing `pToken` shares (e.g. `pEURC`, `pUSDC`, `pWETH`) corresponding to the underlying asset.
+  - Role-based access control references `AccessControlManager` for admin management.
 
-
-* Issued share tokens (`vUSDC`) are non-transferable (`transfer` and `transferFrom` calls revert).
-
-
-
+* **Credit Engine Liquidity Controls**:
+  - `setLoanCore(address _loanCore)`: Registers the credit engine contract (`ADMIN_ROLE`).
+  - `drawLiquidity(address recipient, uint256 amount)`: Allows registered `loanCore` (or `ADMIN_ROLE`) to draw underlying assets for boutique borrowing.
+  - `returnLiquidity(address payer, uint256 amount)`: Allows registered `loanCore` (or `ADMIN_ROLE`) to accept repaid principal + accrued interest.
 
 * **Illiquidity Gate**:
-When a boutique borrows USDC, `LoanCore` requests funds via `LendingVault.transferFunds()`. If available free liquidity is insufficient:
+  If available free liquidity in the pool is insufficient during a borrow request (`IERC20(asset).balanceOf(address(this)) < amount`):
 
-$$\text{USDC}_{\text{available}} = \text{Balance}_{\text{USDC}} - \text{TotalBorrowed}$$
+$$\text{Asset}_{\text{available}} = \text{Balance}_{\text{Asset}}$$
 
-
-
-The contract throws `InsufficientVaultLiquidity()` and reverts the transaction.
+  The contract throws custom error `InsufficientVaultLiquidity(available, required)` and reverts the transaction.
 
 
 
@@ -251,7 +250,7 @@ Liquidator Buyer
     ▼
 HoloFiDutchAuction Contract
     │
-    ├───► 2. Transfer Debt Amount ──────────────► HoloFiLendingVault (ERC-4626)
+    ├───► 2. Transfer Debt Amount ──────────────► HoloFiLendingPool (Generic ERC-4626)
     │                                             (Full Principal + Interest Clearance)
     │
     ├───► 3. Transfer Liquidation Fee ─────────► Protocol Fee Receiver
