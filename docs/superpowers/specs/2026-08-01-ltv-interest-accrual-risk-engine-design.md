@@ -67,7 +67,8 @@ event InterestAccrued(
   - `vault.lastInterestUpdate = block.timestamp`.
 
 #### `getPendingInterest(uint256 vaultId) public view returns (uint256)`
-- Calculates pending un-accrued interest for `vaultId` since `lastInterestUpdate` without mutating state.
+- If `vault.principalDebt == 0 || vault.lastInterestUpdate == 0`, returns `0`.
+- Otherwise, calculates pending un-accrued interest for `vaultId` since `lastInterestUpdate` without mutating state.
 
 #### `getTotalDebt(uint256 vaultId) public view returns (uint256)`
 - Returns `vault.principalDebt + vault.accumulatedInterest + getPendingInterest(vaultId)`.
