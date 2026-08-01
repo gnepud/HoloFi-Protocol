@@ -96,9 +96,9 @@ event InterestAccrued(
 7. `test_GetMaxBorrowCapacity`: Verify max borrow capacity equals `vaultFmv * 50%`.
 
 ### 3.2 TypeScript Integration Tests (`test/HoloFiVaultLoanCore.ts`)
-1. Admin configures risk parameters via `setRiskParameters`.
-2. Verify `getMaxBorrowCapacity` and `calculateHealthFactor` helpers.
-3. Time warp with Hardhat network helper `networkHelpers.time.increase(86400 * 365)` to verify accrued interest calculation over 1 year.
+1. Admin configures risk parameters via `setRiskParameters` and non-admin revert verification (`UnauthorizedAdmin`).
+2. `getMaxBorrowCapacity` calculation verification.
+3. `calculateHealthFactor` calculation verification for zero debt and active debt.
 
 ---
 
