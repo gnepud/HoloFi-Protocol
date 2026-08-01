@@ -33,7 +33,7 @@ contract HoloFiLendingPoolFactory {
         string calldata name,
         string calldata symbol
     ) external returns (address pool) {
-        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender) && !acm.hasRole(acm.ORACLE_ROLE(), msg.sender)) {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedOperator(msg.sender);
         }
         if (address(asset) == address(0)) {

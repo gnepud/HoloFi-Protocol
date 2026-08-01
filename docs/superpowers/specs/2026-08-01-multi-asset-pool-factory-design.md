@@ -11,7 +11,7 @@
 
 The `HoloFiLendingPoolFactory` smart contract provides a centralized, permissioned factory for deploying and registering `HoloFiLendingPool` instances for supported underlying ERC-20 assets (e.g. USDC, EURC, USDT, WETH).
 
-It enforces role authorization (`ADMIN_ROLE` or `ORACLE_ROLE` in `AccessControlManager`), prevents duplicate pool creation per underlying asset, maintains an on-chain registry mapping `underlyingAsset => poolAddress`, and tracks all deployed pool addresses in an array.
+It enforces role authorization (`ADMIN_ROLE` in `AccessControlManager`), prevents duplicate pool creation per underlying asset, maintains an on-chain registry mapping `underlyingAsset => poolAddress`, and tracks all deployed pool addresses in an array.
 
 ---
 

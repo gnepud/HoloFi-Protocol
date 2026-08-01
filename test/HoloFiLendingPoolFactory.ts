@@ -17,8 +17,8 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
     return { acm, factory, eurc, weth, owner, admin, oracle, user, unauthorized };
   }
 
-  it("Should allow admin or oracle to deploy pool and register in lookup mapping", async function () {
-    const { factory, eurc, weth, admin, oracle } = await networkHelpers.loadFixture(deployFactoryFixture);
+  it("Should allow admin to deploy pool and register in lookup mapping", async function () {
+    const { factory, eurc, weth, admin } = await networkHelpers.loadFixture(deployFactoryFixture);
 
     const eurcAddr = await eurc.getAddress();
     const wethAddr = await weth.getAddress();
@@ -30,7 +30,7 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
     expect(eurcPoolAddr).to.not.equal(ethers.ZeroAddress);
     expect(await factory.allPools(0n)).to.equal(eurcPoolAddr);
 
-    await expect(factory.connect(oracle).createPool(wethAddr, "HoloFi Pool WETH", "pWETH"))
+    await expect(factory.connect(admin).createPool(wethAddr, "HoloFi Pool WETH", "pWETH"))
       .to.emit(factory, "PoolCreated");
 
     const wethPoolAddr = await factory.getPool(wethAddr);

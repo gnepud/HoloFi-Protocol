@@ -56,12 +56,12 @@ contract HoloFiLendingPoolFactoryTest is Test {
         assertEq(pool.symbol(), "pEURC");
     }
 
-    function test_CreatePool_OracleSuccess() public {
+    function test_RevertIf_OracleCreatePool() public {
         vm.prank(oracle);
-        address poolAddr = factory.createPool(IERC20(address(weth)), "HoloFi Pool WETH", "pWETH");
-
-        assertEq(factory.getPool(address(weth)), poolAddr);
-        assertEq(factory.allPoolsLength(), 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(HoloFiLendingPoolFactory.UnauthorizedOperator.selector, oracle)
+        );
+        factory.createPool(IERC20(address(weth)), "HoloFi Pool WETH", "pWETH");
     }
 
     function test_RevertIf_UnauthorizedCreatePool() public {
