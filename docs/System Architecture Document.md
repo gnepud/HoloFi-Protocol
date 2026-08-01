@@ -161,8 +161,10 @@ HoloFiCardCollection public immutable nftCollection;
 mapping(uint256 => CollateralVault) public vaults;
 mapping(uint256 => uint256) public nftVaultId; // Fast lookup mapping (tokenId => vaultId)
 uint256 public nextVaultId = 1;
-uint256 public baseLtvBps = 5000;   // Base LTV: 50.00% (expressed in Basis Points)
+uint256 public maxLtvBps = 5000;                // Max LTV: 50.00%
 uint256 public liquidationThresholdBps = 7000; // Liquidation Threshold: 70.00%
+uint256 public liquidationPenaltyBps = 1000;   // Liquidation Penalty: 10.00%
+uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
 ```
 
 #### B. KYB Control & Escrow Mechanics
@@ -181,22 +183,32 @@ uint256 public liquidationThresholdBps = 7000; // Liquidation Threshold: 70.00%
   - Unlocks cards via `nftCollection.setCardLock(tokenId, false)` and returns NFTs via `nftCollection.safeTransferFrom(address(this), msg.sender, tokenId)`.
   - Clears `nftVaultId[tokenId]` and removes token from `vault.tokenIds`.
 
-#### C. Accounting Mechanics
+#### C. Risk Engine & Accounting Mechanics
 
-* **Continuous Interest Calculation**:
+* **Configurable Risk Parameters (`setRiskParameters`)**:
+  - Restricted to `ADMIN_ROLE`. Configures `maxLtvBps`, `liquidationThresholdBps`, `liquidationPenaltyBps`, and `borrowRateBpsPerYear`. Reverts `InvalidRiskParameters()` if `maxLtvBps > liquidationThresholdBps`.
+
+* **Continuous Interest Accrual (`accrueInterest`)**:
 
 $$\Delta t = \text{block.timestamp} - \text{lastInterestUpdate}$$
 
 
-$$\text{Interest}_{\text{new}} = \text{principalDebt} \times \text{BorrowRate} \times \frac{\Delta t}{365 \text{ days}}$$
+$$\text{Interest}_{\text{new}} = \frac{\text{principalDebt} \times \text{borrowRateBpsPerYear} \times \Delta t}{10000 \times 365\text{ days}}$$
 
 
 $$\text{accumulatedInterest} \leftarrow \text{accumulatedInterest} + \text{Interest}_{\text{new}}$$
 
 
-* **Max Borrow Capacity**:
+* **Health Factor Engine (`calculateHealthFactor` / `getHealthFactor`)**:
+  - Calculates Health Factor scaled with `1e18` precision:
 
-$$\text{MaxBorrow} = \text{payload.totalFmv} \times \frac{\text{baseLtvBps}}{10000}$$
+$$HF = \frac{\text{Vault FMV} \times \text{liquidationThresholdBps} \times 1\text{e}18}{\text{Total Debt} \times 10000}$$
+
+  - Returns `type(uint256).max` if total debt is 0.
+
+* **Max Borrow Capacity (`getMaxBorrowCapacity`)**:
+
+$$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
 
 
 
