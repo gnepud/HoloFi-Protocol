@@ -14,7 +14,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
     struct CollateralVault {
         uint256 vaultId;
-        address owner;               // Boutique wallet address
+        address owner;               // Store wallet address
         uint256[] tokenIds;          // List of deposited NFT token IDs
         uint256 principalDebt;       // Borrowed capital
         uint256 accumulatedInterest; // Unpaid accrued interest

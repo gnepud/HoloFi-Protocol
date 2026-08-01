@@ -2,12 +2,12 @@
 
 ## 1. System Vision & Architectural Decoupling
 
-**HoloFi** is an on-chain B2B Real-World Asset (RWA) financing infrastructure designed for Trading Card Game (TCG: Pokémon, Magic: The Gathering, Yu-Gi-Oh!) boutiques and merchants. The system enforces a strict separation of concerns between physical custody and the on-chain credit engine:
+**HoloFi** is an on-chain B2B Real-World Asset (RWA) financing infrastructure designed for Trading Card Game (TCG: Pokémon, Magic: The Gathering, Yu-Gi-Oh!) stores and merchants. The system enforces a strict separation of concerns between physical custody and the on-chain credit engine:
 
 1. **Physical Logistics & Vaulting**: 100% delegated to certified partner **Blink**, which handles physical card reception, grading authentication, secure vaulting, and physical delivery upon redemption.
 
 
-2. **On-Chain Register & Credit Engine**: Powered by smart contracts on EVM-compatible blockchains. HoloFi manages a single, permissioned NFT collection (`HoloFiCardCollection`), boutique-isolated collateral vaults (`CollateralVault`), a shared liquidity pool (`ERC-4626`), an oracle valuation pipeline (`Chainlink CRE` + `FMV Engine`), and a Dutch Auction liquidation mechanism.
+2. **On-Chain Register & Credit Engine**: Powered by smart contracts on EVM-compatible blockchains. HoloFi manages a single, permissioned NFT collection (`HoloFiCardCollection`), store-isolated collateral vaults (`CollateralVault`), a shared liquidity pool (`ERC-4626`), an oracle valuation pipeline (`Chainlink CRE` + `FMV Engine`), and a Dutch Auction liquidation mechanism.
 
 
 
@@ -56,7 +56,7 @@
 
 ### 3.1. Unified Ownership Registry: `HoloFiCardCollection`
 
-All vaulted TCG cards across all boutiques are minted within a **single, unified ERC-721 Collection** (`HoloFi Vaulted TCG Collection`).
+All vaulted TCG cards across all stores are minted within a **single, unified ERC-721 Collection** (`HoloFi Vaulted TCG Collection`).
 
 * **Transfer Restrictions (Permissioned ERC-721)**:
 Retain standard OpenZeppelin ERC-721 transfer logic so NFTs transfer freely between standard wallets outside of loans, but disallow transfers if the NFT is locked under collateral staking (`isLocked == true`). Attempting to transfer a locked card reverts with `CardIsLocked(tokenId)`.
@@ -138,7 +138,7 @@ During `borrow()`, `withdrawCollateral()`, or `triggerVaultLiquidation()`, the c
 
 ### 3.3. Credit Manager: `HoloFiVaultLoanCore`
 
-Manages isolated `CollateralVault` accounting for each boutique.
+Manages isolated `CollateralVault` accounting for each store.
 
 #### A. Core Data Structures & State Mappings
 
@@ -147,7 +147,7 @@ enum VaultStatus { Active, Liquidating, Closed }
 
 struct CollateralVault {
     uint256 vaultId;
-    address owner;                  // Boutique wallet address
+    address owner;                  // Store wallet address
     uint256[] tokenIds;             // List of deposited NFT token IDs (from global collection)
     uint256 principalDebt;          // Borrowed capital
     uint256 accumulatedInterest;    // Unpaid accrued interest
@@ -168,16 +168,16 @@ uint256 public liquidationThresholdBps = 7000; // Liquidation Threshold: 70.00%
 #### B. KYB Control & Escrow Mechanics
 
 * **Vault Creation (`createVault`)**:
-  - Restricted to KYB-approved boutique wallets (`acm.isKybApproved(msg.sender)`). Reverts with `KybRequired(msg.sender)` if unapproved.
+  - Restricted to KYB-approved store wallets (`acm.isKybApproved(msg.sender)`). Reverts with `KybRequired(msg.sender)` if unapproved.
   - Assigns unique `vaultId = nextVaultId++` and sets `status = VaultStatus.Active`.
 
 * **Escrow Deposit (`depositCollateral`)**:
-  - Boutiques can add card NFTs to their active vault at any time.
+  - Stores can add card NFTs to their active vault at any time.
   - Executes `nftCollection.safeTransferFrom(msg.sender, address(this), tokenId)` and locks cards via `nftCollection.setCardLock(tokenId, true)` to prevent secondary transfers.
   - Registers `nftVaultId[tokenId] = vaultId` and pushes `tokenId` to `vault.tokenIds`.
 
 * **Escrow Withdrawal (`withdrawCollateral`)**:
-  - Boutiques can withdraw specific card NFTs when zero active debt remains (`principalDebt + accumulatedInterest == 0`). Reverts with `VaultHasActiveDebt` if active debt exists.
+  - Stores can withdraw specific card NFTs when zero active debt remains (`principalDebt + accumulatedInterest == 0`). Reverts with `VaultHasActiveDebt` if active debt exists.
   - Unlocks cards via `nftCollection.setCardLock(tokenId, false)` and returns NFTs via `nftCollection.safeTransferFrom(address(this), msg.sender, tokenId)`.
   - Clears `nftVaultId[tokenId]` and removes token from `vault.tokenIds`.
 
@@ -215,7 +215,7 @@ The `HoloFiLendingPool` is a **generic, permissioned ERC-4626 yield-bearing liqu
 
 * **Credit Engine Liquidity Controls**:
   - `setLoanCore(address _loanCore)`: Registers the credit engine contract (`ADMIN_ROLE`).
-  - `drawLiquidity(address recipient, uint256 amount)`: Allows registered `loanCore` (or `ADMIN_ROLE`) to draw underlying assets for boutique borrowing.
+  - `drawLiquidity(address recipient, uint256 amount)`: Allows registered `loanCore` (or `ADMIN_ROLE`) to draw underlying assets for store borrowing.
   - `returnLiquidity(address payer, uint256 amount)`: Allows registered `loanCore` (or `ADMIN_ROLE`) to accept repaid principal + accrued interest.
 
 * **Illiquidity Gate**:
@@ -237,14 +237,14 @@ $$\text{Asset}_{\text{available}} = \text{Balance}_{\text{Asset}}$$
 
 ### 3.5. Liquidation Engine: `HoloFiDutchAuction`
 
-Activated when a boutique vault's Health Factor ($HF$) falls below 1.0:
+Activated when a store vault's Health Factor ($HF$) falls below 1.0:
 
 
 $$HF = \frac{\text{payload.totalFmv} \times \text{liquidationThresholdBps}}{\text{principalDebt} + \text{accumulatedInterest}} < 1.0$$
 
 #### A. Dutch Auction Parameters
 
-1. **State Locking**: The target vault enters `Liquidating` status. Associated NFTs are transferred to `HoloFiDutchAuction`. The boutique cannot borrow, repay, or withdraw assets.
+1. **State Locking**: The target vault enters `Liquidating` status. Associated NFTs are transferred to `HoloFiDutchAuction`. The store cannot borrow, repay, or withdraw assets.
 
 
 2. **Price Decay Function**:
@@ -273,7 +273,7 @@ HoloFiDutchAuction Contract
     │
     ├───► 3. Transfer Liquidation Fee ─────────► Protocol Fee Receiver
     │
-    ├───► 4. Transfer Surplus (If any) ────────► Original Boutique (Vault Owner)
+    ├───► 4. Transfer Surplus (If any) ────────► Original Store (Vault Owner)
     │
     └───► 5. On-Chain Transfer NFTs ───────────► Liquidator Address
                                                   │
@@ -288,10 +288,10 @@ HoloFiDutchAuction Contract
 
 ## 4. Sequence Diagrams
 
-### 4.1. Boutique Borrow Sequence
+### 4.1. Store Borrow Sequence
 
 ```text
-Boutique            Front-End / CRE           LoanCore Contract       ERC-4626 Vault
+Store               Front-End / CRE           LoanCore Contract       ERC-4626 Vault
    │                       │                          │                      │
    │─── 1. Select NFTs ───►│                          │                      │
    │    & Request Borrow   │                          │                      │
@@ -346,7 +346,7 @@ Keeper / Liquidator        DutchAuction Contract       LoanCore Contract       B
 * `DEFAULT_ADMIN_ROLE`: Controlled by a 3-of-5 Multi-Sig. Governs upgrades and role assignments.
 * `ORACLE_ROLE`: Granted exclusively to the **Chainlink CRE** node private key. Authorized to sign EIP-712 payloads.
 * `PAUSER_ROLE`: Emergency pause capability (Circuit Breaker) over contract operations during market anomalies or security incidents.
-* `KYB_MANAGER_ROLE`: Authorized to grant or revoke KYB whitelisted status for boutiques and LPs.
+* `KYB_MANAGER_ROLE`: Authorized to grant or revoke KYB whitelisted status for stores and LPs.
 
 ### 5.2. Smart Contract Mitigations
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement and test `HoloFiVaultLoanCore.sol` to provide isolated vault accounting for KYB-approved boutiques and escrow management for `HoloFiCardCollection` ERC-721 card NFTs.
+**Goal:** Implement and test `HoloFiVaultLoanCore.sol` to provide isolated vault accounting for KYB-approved stores and escrow management for `HoloFiCardCollection` ERC-721 card NFTs.
 
 **Architecture:** `HoloFiVaultLoanCore.sol` integrates with `AccessControlManager` (KYB checks on `createVault`) and `HoloFiCardCollection` (locking and escrowing NFTs via `safeTransferFrom` and `setCardLock`). Maintains `CollateralVault` state and token mapping lookups (`nftVaultId`). Tested via Solidity unit tests (`contracts/HoloFiVaultLoanCore.t.sol`) and TypeScript integration tests (`test/HoloFiVaultLoanCore.ts`).
 
@@ -45,7 +45,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
 
     address public admin = address(0x1111);
     address public minter = address(0x2222);
-    address public boutique = address(0x3333);
+    address public store = address(0x3333);
     address public unauthorized = address(0x4444);
 
     uint256 public cardId1;
@@ -66,16 +66,16 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
 
         vm.startPrank(admin);
         acm.grantRole(acm.MINTER_ROLE(), minter);
-        acm.setKybStatus(boutique, true);
+        acm.setKybStatus(store, true);
         vm.stopPrank();
 
         bytes32 attestationHash = keccak256("raw_data_1");
         vm.prank(minter);
-        cardId1 = cardCollection.mintCard(boutique, "ipfs://card1", attestationHash);
+        cardId1 = cardCollection.mintCard(store, "ipfs://card1", attestationHash);
 
         bytes32 attestationHash2 = keccak256("raw_data_2");
         vm.prank(minter);
-        cardId2 = cardCollection.mintCard(boutique, "ipfs://card2", attestationHash2);
+        cardId2 = cardCollection.mintCard(store, "ipfs://card2", attestationHash2);
     }
 
     function test_Constructor_InitialState() public view {
@@ -95,7 +95,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_CreateVault_KybApprovedSuccess() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
         assertEq(vaultId, 1);
@@ -103,7 +103,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
 
         HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
         assertEq(vault.vaultId, 1);
-        assertEq(vault.owner, boutique);
+        assertEq(vault.owner, store);
         assertEq(vault.principalDebt, 0);
         assertEq(vault.accumulatedInterest, 0);
         assertTrue(vault.status == HoloFiVaultLoanCore.VaultStatus.Active);
@@ -116,17 +116,17 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_DepositCollateral_Success() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
-        vm.prank(boutique);
+        vm.prank(store);
         cardCollection.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](2);
         tokenIds[0] = cardId1;
         tokenIds[1] = cardId2;
 
-        vm.prank(boutique);
+        vm.prank(store);
         loanCore.depositCollateral(vaultId, tokenIds);
 
         assertEq(cardCollection.ownerOf(cardId1), address(loanCore));
@@ -147,7 +147,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_RevertIf_DepositCollateral_UnauthorizedOwner() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
         uint256[] memory tokenIds = new uint256[](1);
@@ -165,26 +165,26 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_WithdrawCollateral_Success() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
-        vm.prank(boutique);
+        vm.prank(store);
         cardCollection.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](2);
         tokenIds[0] = cardId1;
         tokenIds[1] = cardId2;
 
-        vm.prank(boutique);
+        vm.prank(store);
         loanCore.depositCollateral(vaultId, tokenIds);
 
         uint256[] memory withdrawTokens = new uint256[](1);
         withdrawTokens[0] = cardId1;
 
-        vm.prank(boutique);
+        vm.prank(store);
         loanCore.withdrawCollateral(vaultId, withdrawTokens);
 
-        assertEq(cardCollection.ownerOf(cardId1), boutique);
+        assertEq(cardCollection.ownerOf(cardId1), store);
         (,, bool isLocked1) = cardCollection.getCard(cardId1);
         assertFalse(isLocked1);
         assertEq(loanCore.nftVaultId(cardId1), 0);
@@ -195,13 +195,13 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_RevertIf_WithdrawCollateral_NonVaultToken() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
         uint256[] memory withdrawTokens = new uint256[](1);
         withdrawTokens[0] = cardId1;
 
-        vm.prank(boutique);
+        vm.prank(store);
         vm.expectRevert(
             abi.encodeWithSelector(HoloFiVaultLoanCore.TokenNotInVault.selector, cardId1, vaultId)
         );
@@ -417,7 +417,7 @@ const { ethers, networkHelpers } = await network.create();
 
 describe("HoloFiVaultLoanCore Integration Tests", function () {
   async function deployLoanCoreFixture() {
-    const [owner, admin, minter, boutique, unauthorized] = await ethers.getSigners();
+    const [owner, admin, minter, store, unauthorized] = await ethers.getSigners();
     const acm = await ethers.deployContract("AccessControlManager", [admin.address]);
     const cardCollection = await ethers.deployContract("HoloFiCardCollection", [await acm.getAddress()]);
     const loanCore = await ethers.deployContract("HoloFiVaultLoanCore", [
@@ -427,31 +427,31 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
 
     const minterRole = await acm.MINTER_ROLE();
     await acm.connect(admin).grantRole(minterRole, minter.address);
-    await acm.connect(admin).setKybStatus(boutique.address, true);
+    await acm.connect(admin).setKybStatus(store.address, true);
 
     const attestationHash1 = ethers.keccak256(ethers.toUtf8Bytes("attestation1"));
     const attestationHash2 = ethers.keccak256(ethers.toUtf8Bytes("attestation2"));
 
-    await cardCollection.connect(minter).mintCard(boutique.address, "ipfs://card1", attestationHash1);
-    await cardCollection.connect(minter).mintCard(boutique.address, "ipfs://card2", attestationHash2);
+    await cardCollection.connect(minter).mintCard(store.address, "ipfs://card1", attestationHash1);
+    await cardCollection.connect(minter).mintCard(store.address, "ipfs://card2", attestationHash2);
 
-    return { acm, cardCollection, loanCore, owner, admin, minter, boutique, unauthorized };
+    return { acm, cardCollection, loanCore, owner, admin, minter, store, unauthorized };
   }
 
-  it("Should allow KYB approved boutique to create vault and escrow/withdraw cards", async function () {
-    const { cardCollection, loanCore, boutique } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+  it("Should allow KYB approved store to create vault and escrow/withdraw cards", async function () {
+    const { cardCollection, loanCore, store } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     const loanCoreAddr = await loanCore.getAddress();
 
-    await expect(loanCore.connect(boutique).createVault())
+    await expect(loanCore.connect(store).createVault())
       .to.emit(loanCore, "VaultCreated")
-      .withArgs(1n, boutique.address);
+      .withArgs(1n, store.address);
 
-    await cardCollection.connect(boutique).setApprovalForAll(loanCoreAddr, true);
+    await cardCollection.connect(store).setApprovalForAll(loanCoreAddr, true);
 
-    await expect(loanCore.connect(boutique).depositCollateral(1n, [1n, 2n]))
+    await expect(loanCore.connect(store).depositCollateral(1n, [1n, 2n]))
       .to.emit(loanCore, "CollateralDeposited")
-      .withArgs(1n, boutique.address, [1n, 2n]);
+      .withArgs(1n, store.address, [1n, 2n]);
 
     expect(await cardCollection.ownerOf(1n)).to.equal(loanCoreAddr);
     expect(await cardCollection.ownerOf(2n)).to.equal(loanCoreAddr);
@@ -459,11 +459,11 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     const card1Info = await cardCollection.getCard(1n);
     expect(card1Info.isLocked).to.be.true;
 
-    await expect(loanCore.connect(boutique).withdrawCollateral(1n, [1n]))
+    await expect(loanCore.connect(store).withdrawCollateral(1n, [1n]))
       .to.emit(loanCore, "CollateralWithdrawn")
-      .withArgs(1n, boutique.address, [1n]);
+      .withArgs(1n, store.address, [1n]);
 
-    expect(await cardCollection.ownerOf(1n)).to.equal(boutique.address);
+    expect(await cardCollection.ownerOf(1n)).to.equal(store.address);
 
     const card1InfoUnlocked = await cardCollection.getCard(1n);
     expect(card1InfoUnlocked.isLocked).to.be.false;
@@ -473,7 +473,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     expect(remainingTokens[0]).to.equal(2n);
   });
 
-  it("Should revert when non-KYB boutique attempts to create vault", async function () {
+  it("Should revert when non-KYB store attempts to create vault", async function () {
     const { loanCore, unauthorized } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     await expect(

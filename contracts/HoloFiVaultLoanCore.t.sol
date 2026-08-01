@@ -14,7 +14,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
 
     address public admin = address(0x1111);
     address public minter = address(0x2222);
-    address public boutique = address(0x3333);
+    address public store = address(0x3333);
     address public unauthorized = address(0x4444);
 
     uint256 public cardId1;
@@ -36,14 +36,14 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         vm.startPrank(admin);
         acm.grantRole(acm.MINTER_ROLE(), minter);
         acm.grantRole(acm.ADMIN_ROLE(), address(loanCore));
-        acm.setKybStatus(boutique, true);
+        acm.setKybStatus(store, true);
         vm.stopPrank();
 
         bytes32 attestationHash1 = keccak256("raw_data_1");
         bytes32 attestationHash2 = keccak256("raw_data_2");
         vm.startPrank(minter);
-        cardId1 = cardCollection.mintCard(boutique, attestationHash1, "ipfs://card1");
-        cardId2 = cardCollection.mintCard(boutique, attestationHash2, "ipfs://card2");
+        cardId1 = cardCollection.mintCard(store, attestationHash1, "ipfs://card1");
+        cardId2 = cardCollection.mintCard(store, attestationHash2, "ipfs://card2");
         vm.stopPrank();
     }
 
@@ -64,7 +64,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_CreateVault_KybApprovedSuccess() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
         assertEq(vaultId, 1);
@@ -72,7 +72,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
 
         HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
         assertEq(vault.vaultId, 1);
-        assertEq(vault.owner, boutique);
+        assertEq(vault.owner, store);
         assertEq(vault.principalDebt, 0);
         assertEq(vault.accumulatedInterest, 0);
         assertTrue(vault.status == HoloFiVaultLoanCore.VaultStatus.Active);
@@ -85,17 +85,17 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_DepositCollateral_Success() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
-        vm.prank(boutique);
+        vm.prank(store);
         cardCollection.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](2);
         tokenIds[0] = cardId1;
         tokenIds[1] = cardId2;
 
-        vm.prank(boutique);
+        vm.prank(store);
         loanCore.depositCollateral(vaultId, tokenIds);
 
         assertEq(cardCollection.ownerOf(cardId1), address(loanCore));
@@ -116,7 +116,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_RevertIf_DepositCollateral_UnauthorizedOwner() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
         uint256[] memory tokenIds = new uint256[](1);
@@ -134,26 +134,26 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_WithdrawCollateral_Success() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
-        vm.prank(boutique);
+        vm.prank(store);
         cardCollection.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](2);
         tokenIds[0] = cardId1;
         tokenIds[1] = cardId2;
 
-        vm.prank(boutique);
+        vm.prank(store);
         loanCore.depositCollateral(vaultId, tokenIds);
 
         uint256[] memory withdrawTokens = new uint256[](1);
         withdrawTokens[0] = cardId1;
 
-        vm.prank(boutique);
+        vm.prank(store);
         loanCore.withdrawCollateral(vaultId, withdrawTokens);
 
-        assertEq(cardCollection.ownerOf(cardId1), boutique);
+        assertEq(cardCollection.ownerOf(cardId1), store);
         HoloFiCardCollection.CardMetadata memory card1 = cardCollection.getCard(cardId1);
         assertFalse(card1.isLocked);
         assertEq(loanCore.nftVaultId(cardId1), 0);
@@ -164,13 +164,13 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     }
 
     function test_RevertIf_WithdrawCollateral_NonVaultToken() public {
-        vm.prank(boutique);
+        vm.prank(store);
         uint256 vaultId = loanCore.createVault();
 
         uint256[] memory withdrawTokens = new uint256[](1);
         withdrawTokens[0] = cardId1;
 
-        vm.prank(boutique);
+        vm.prank(store);
         vm.expectRevert(
             abi.encodeWithSelector(HoloFiVaultLoanCore.TokenNotInVault.selector, cardId1, vaultId)
         );

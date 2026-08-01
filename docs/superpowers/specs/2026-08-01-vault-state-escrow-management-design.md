@@ -9,7 +9,7 @@
 
 ## 1. Overview & Objectives
 
-`HoloFiVaultLoanCore` serves as the core credit and collateral management contract for the HoloFi protocol. It tracks isolated `CollateralVault` instances created by KYB-approved boutiques and manages the secure escrow of `HoloFiCardCollection` ERC-721 card NFTs as loan collateral.
+`HoloFiVaultLoanCore` serves as the core credit and collateral management contract for the HoloFi protocol. It tracks isolated `CollateralVault` instances created by KYB-approved stores and manages the secure escrow of `HoloFiCardCollection` ERC-721 card NFTs as loan collateral.
 
 ---
 
@@ -29,7 +29,7 @@ enum VaultStatus { Active, Liquidating, Closed }
 
 struct CollateralVault {
     uint256 vaultId;
-    address owner;               // Boutique wallet address
+    address owner;               // Store wallet address
     uint256[] tokenIds;          // List of deposited NFT token IDs
     uint256 principalDebt;       // Borrowed capital
     uint256 accumulatedInterest; // Unpaid accrued interest
@@ -115,19 +115,19 @@ event CollateralWithdrawn(uint256 indexed vaultId, address indexed owner, uint25
 
 ### 3.1 Solidity Unit Tests (`contracts/HoloFiVaultLoanCore.t.sol`)
 1. `test_Constructor_InitialState`: Verify `acm` and `nftCollection` addresses.
-2. `test_CreateVault_KybApprovedSuccess`: KYB-approved boutique creates vault, verifying `vaultId = 1`, `owner`, and `status = Active`.
+2. `test_CreateVault_KybApprovedSuccess`: KYB-approved store creates vault, verifying `vaultId = 1`, `owner`, and `status = Active`.
 3. `test_RevertIf_CreateVault_NonKyb`: Non-KYB wallet reverts `KybRequired`.
 4. `test_DepositCollateral_Success`: Deposit NFTs into vault, verifying transfer into `LoanCore`, `isLocked == true`, `nftVaultId`, and `tokenIds` list.
 5. `test_RevertIf_DepositCollateral_Unauthorized`: Non-owner reverts `UnauthorizedVaultOwner`.
-6. `test_WithdrawCollateral_Success`: Withdraw NFTs from zero-debt vault, verifying transfer back to boutique, `isLocked == false`, and cleared arrays.
+6. `test_WithdrawCollateral_Success`: Withdraw NFTs from zero-debt vault, verifying transfer back to store, `isLocked == false`, and cleared arrays.
 7. `test_RevertIf_WithdrawCollateral_NonVaultToken`: Attempting to withdraw token not in vault reverts `TokenNotInVault`.
 
 ### 3.2 TypeScript Integration Tests (`test/HoloFiVaultLoanCore.ts`)
-1. Deploy ACM, CardCollection, grant MINTER_ROLE, approve boutique for KYB.
-2. Mint cards to boutique.
-3. Boutique creates vault via `createVault()`.
-4. Boutique approves `LoanCore` for cards, deposits cards via `depositCollateral()`, verifying card transfers and locks (`isLocked`).
-5. Boutique withdraws cards via `withdrawCollateral()`, verifying card transfers back and unlocked status (`isLocked == false`).
+1. Deploy ACM, CardCollection, grant MINTER_ROLE, approve store for KYB.
+2. Mint cards to store.
+3. Store creates vault via `createVault()`.
+4. Store approves `LoanCore` for cards, deposits cards via `depositCollateral()`, verifying card transfers and locks (`isLocked`).
+5. Store withdraws cards via `withdrawCollateral()`, verifying card transfers back and unlocked status (`isLocked == false`).
 6. Verify non-KYB wallet cannot create vault (`KybRequired`).
 
 ---

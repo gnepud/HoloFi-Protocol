@@ -11,7 +11,7 @@
 
 The `HoloFiLendingPool` smart contract is a generic, permissioned ERC-4626 yield-bearing liquidity pool. It accepts single-asset deposits for any standard ERC-20 token (such as USDC, EURC, USDT, or WETH) and issues corresponding yield-bearing liquidity tokens (`pTokens`) to Liquidity Providers (LPs).
 
-It serves as a modular liquidity pool for the HoloFi credit engine, enabling registered loan core contracts (`HoloFiVaultLoanCore`) to draw funds for boutique borrowing and accept repaid principal + accrued interest.
+It serves as a modular liquidity pool for the HoloFi credit engine, enabling registered loan core contracts (`HoloFiVaultLoanCore`) to draw funds for store borrowing and accept repaid principal + accrued interest.
 
 ---
 

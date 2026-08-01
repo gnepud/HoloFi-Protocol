@@ -9,7 +9,7 @@
 
 ## 1. Overview & Objectives
 
-The KYB (Know Your Business) Whitelist Registry tracks verified boutique wallets permitted to participate in the HoloFi credit protocol (minting/holding collateral NFTs, depositing into the ERC-4626 lending vault, borrowing against vaults).
+The KYB (Know Your Business) Whitelist Registry tracks verified store wallets permitted to participate in the HoloFi credit protocol (minting/holding collateral NFTs, depositing into the ERC-4626 lending vault, borrowing against vaults).
 
 This feature extends `AccessControlManager.sol` to provide on-chain KYB status storage, single and batch update capabilities, event logging, and access control enforced via `KYB_MANAGER_ROLE` and `ADMIN_ROLE`.
 
