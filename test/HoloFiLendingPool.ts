@@ -88,4 +88,22 @@ describe("HoloFiLendingPool Integration Tests", function () {
     ).to.be.revertedWithCustomError(poolEurc, "UnauthorizedLoanCore")
      .withArgs(unauthorized.address);
   });
+
+  it("Should revert transfer or transferFrom of share tokens with custom error ShareTokenNonTransferable", async function () {
+    const { poolEurc, lp, unauthorized } = await networkHelpers.loadFixture(deployLendingPoolFixture);
+    const depositAmount = ethers.parseUnits("1000", 6);
+
+    await poolEurc.connect(lp).deposit(depositAmount, lp.address);
+    const shares = await poolEurc.balanceOf(lp.address);
+
+    await expect(
+      poolEurc.connect(lp).transfer(unauthorized.address, shares)
+    ).to.be.revertedWithCustomError(poolEurc, "ShareTokenNonTransferable");
+
+    await poolEurc.connect(lp).approve(unauthorized.address, shares);
+
+    await expect(
+      poolEurc.connect(unauthorized).transferFrom(lp.address, unauthorized.address, shares)
+    ).to.be.revertedWithCustomError(poolEurc, "ShareTokenNonTransferable");
+  });
 });
