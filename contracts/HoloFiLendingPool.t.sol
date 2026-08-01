@@ -165,4 +165,25 @@ contract HoloFiLendingPoolTest is Test {
         vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.UnauthorizedLoanCore.selector, unauthorized));
         poolEurc.returnLiquidity(borrower, 100 * 1e6);
     }
+
+    function test_RevertIf_TransferShareToken() public {
+        vm.prank(lp);
+        poolEurc.deposit(1000 * 1e6, lp);
+
+        vm.prank(lp);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ShareTokenNonTransferable.selector));
+        poolEurc.transfer(borrower, 100 * 1e6);
+    }
+
+    function test_RevertIf_TransferFromShareToken() public {
+        vm.prank(lp);
+        poolEurc.deposit(1000 * 1e6, lp);
+
+        vm.prank(lp);
+        poolEurc.approve(unauthorized, 500 * 1e6);
+
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ShareTokenNonTransferable.selector));
+        poolEurc.transferFrom(lp, borrower, 100 * 1e6);
+    }
 }

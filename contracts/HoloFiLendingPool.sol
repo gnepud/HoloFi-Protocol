@@ -22,6 +22,7 @@ contract HoloFiLendingPool is ERC4626 {
     error UnauthorizedLoanCore(address caller);
     error UnauthorizedAdmin(address caller);
     error InsufficientVaultLiquidity(uint256 available, uint256 required);
+    error ShareTokenNonTransferable();
 
     constructor(
         IERC20 asset_,
@@ -70,5 +71,12 @@ contract HoloFiLendingPool is ERC4626 {
 
         IERC20(asset()).transferFrom(payer, address(this), amount);
         emit LiquidityReturned(payer, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && to != address(0)) {
+            revert ShareTokenNonTransferable();
+        }
+        super._update(from, to, value);
     }
 }
