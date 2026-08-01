@@ -75,4 +75,31 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     ).to.be.revertedWithCustomError(loanCore, "KybRequired")
      .withArgs(unauthorized.address);
   });
+
+  it("Should allow admin to update risk parameters and calculate max borrow capacity & health factor", async function () {
+    const { loanCore, admin, unauthorized } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    await expect(loanCore.connect(admin).setRiskParameters(4000n, 6000n, 1200n, 600n))
+      .to.emit(loanCore, "RiskParametersUpdated")
+      .withArgs(4000n, 6000n, 1200n, 600n);
+
+    expect(await loanCore.maxLtvBps()).to.equal(4000n);
+    expect(await loanCore.liquidationThresholdBps()).to.equal(6000n);
+    expect(await loanCore.liquidationPenaltyBps()).to.equal(1200n);
+    expect(await loanCore.borrowRateBpsPerYear()).to.equal(600n);
+
+    await expect(
+      loanCore.connect(unauthorized).setRiskParameters(4000n, 6000n, 1200n, 600n)
+    ).to.be.revertedWithCustomError(loanCore, "UnauthorizedAdmin")
+     .withArgs(unauthorized.address);
+
+    const fmv = ethers.parseUnits("10000", 6);
+    expect(await loanCore.getMaxBorrowCapacity(fmv)).to.equal(ethers.parseUnits("4000", 6));
+
+    const zeroDebtHf = await loanCore.calculateHealthFactor(fmv, 0n);
+    expect(zeroDebtHf).to.equal(ethers.MaxUint256);
+
+    const safeHf = await loanCore.calculateHealthFactor(fmv, ethers.parseUnits("5000", 6));
+    expect(safeHf).to.equal(ethers.parseEther("1.2"));
+  });
 });
