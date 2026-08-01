@@ -140,7 +140,7 @@ During `borrow()`, `withdrawCollateral()`, or `triggerVaultLiquidation()`, the c
 
 Manages isolated `CollateralVault` accounting for each boutique.
 
-#### A. Core Data Structures
+#### A. Core Data Structures & State Mappings
 
 ```solidity
 enum VaultStatus { Active, Liquidating, Closed }
@@ -149,19 +149,39 @@ struct CollateralVault {
     uint256 vaultId;
     address owner;                  // Boutique wallet address
     uint256[] tokenIds;             // List of deposited NFT token IDs (from global collection)
-    uint256 principalDebt;          // Borrowed capital (USDC)
+    uint256 principalDebt;          // Borrowed capital
     uint256 accumulatedInterest;    // Unpaid accrued interest
     uint256 lastInterestUpdate;     // Timestamp of last interest calculation
     VaultStatus status;
 }
 
+AccessControlManager public immutable acm;
+HoloFiCardCollection public immutable nftCollection;
+
 mapping(uint256 => CollateralVault) public vaults;
+mapping(uint256 => uint256) public nftVaultId; // Fast lookup mapping (tokenId => vaultId)
+uint256 public nextVaultId = 1;
 uint256 public baseLtvBps = 5000;   // Base LTV: 50.00% (expressed in Basis Points)
 uint256 public liquidationThresholdBps = 7000; // Liquidation Threshold: 70.00%
-
 ```
 
-#### B. Accounting Mechanics & Card Movement Controls
+#### B. KYB Control & Escrow Mechanics
+
+* **Vault Creation (`createVault`)**:
+  - Restricted to KYB-approved boutique wallets (`acm.isKybApproved(msg.sender)`). Reverts with `KybRequired(msg.sender)` if unapproved.
+  - Assigns unique `vaultId = nextVaultId++` and sets `status = VaultStatus.Active`.
+
+* **Escrow Deposit (`depositCollateral`)**:
+  - Boutiques can add card NFTs to their active vault at any time.
+  - Executes `nftCollection.safeTransferFrom(msg.sender, address(this), tokenId)` and locks cards via `nftCollection.setCardLock(tokenId, true)` to prevent secondary transfers.
+  - Registers `nftVaultId[tokenId] = vaultId` and pushes `tokenId` to `vault.tokenIds`.
+
+* **Escrow Withdrawal (`withdrawCollateral`)**:
+  - Boutiques can withdraw specific card NFTs when zero active debt remains (`principalDebt + accumulatedInterest == 0`). Reverts with `VaultHasActiveDebt` if active debt exists.
+  - Unlocks cards via `nftCollection.setCardLock(tokenId, false)` and returns NFTs via `nftCollection.safeTransferFrom(address(this), msg.sender, tokenId)`.
+  - Clears `nftVaultId[tokenId]` and removes token from `vault.tokenIds`.
+
+#### C. Accounting Mechanics
 
 * **Continuous Interest Calculation**:
 
@@ -177,14 +197,6 @@ $$\text{accumulatedInterest} \leftarrow \text{accumulatedInterest} + \text{Inter
 * **Max Borrow Capacity**:
 
 $$\text{MaxBorrow} = \text{payload.totalFmv} \times \frac{\text{baseLtvBps}}{10000}$$
-
-
-* **Card Deposit (`depositCollateral`)**:
-Boutiques can add NFTs to their vault at any time, increasing `totalFmv` and credit limit without requiring immediate borrow execution.
-* **Card Withdrawal (`withdrawCollateral`)**:
-Boutiques can remove specific NFTs if and only if the remaining FMV satisfies the safety assertion:
-
-$$\text{Total Debt} \le (\text{payload.totalFmv} - \text{FMV}(\text{withdrawnTokens})) \times \frac{\text{baseLtvBps}}{10000}$$
 
 
 
