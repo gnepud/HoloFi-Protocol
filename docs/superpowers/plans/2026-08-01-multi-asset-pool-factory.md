@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement and test `HoloFiLendingPoolFactory.sol` to enable `ADMIN_ROLE` and `ORACLE_ROLE` to deploy permissioned `HoloFiLendingPool` instances per supported underlying ERC-20 asset with an on-chain lookup registry.
+**Goal:** Implement and test `HoloFiLendingPoolFactory.sol` to enable `ADMIN_ROLE` to deploy permissioned `HoloFiLendingPool` instances per supported underlying ERC-20 asset with an on-chain lookup registry.
 
-**Architecture:** `HoloFiLendingPoolFactory.sol` links to `AccessControlManager`, validates authorization (`ADMIN_ROLE` or `ORACLE_ROLE`), deploys new `HoloFiLendingPool` instances, registers `getPool[underlyingAsset] = poolAddress`, tracks pool addresses in `allPools`, and prevents duplicate pool creation for the same underlying asset. Tested via Solidity unit tests (`contracts/HoloFiLendingPoolFactory.t.sol`) and TypeScript integration tests (`test/HoloFiLendingPoolFactory.ts`).
+**Architecture:** `HoloFiLendingPoolFactory.sol` links to `AccessControlManager`, validates authorization (`ADMIN_ROLE`), deploys new `HoloFiLendingPool` instances, registers `getPool[underlyingAsset] = poolAddress`, tracks pool addresses in `allPools`, and prevents duplicate pool creation for the same underlying asset. Tested via Solidity unit tests (`contracts/HoloFiLendingPoolFactory.t.sol`) and TypeScript integration tests (`test/HoloFiLendingPoolFactory.ts`).
 
 **Tech Stack:** Solidity ^0.8.28, OpenZeppelin `@openzeppelin/contracts`, Hardhat 3, Ethers v6, `forge-std`, Mocha, Chai.
 
@@ -12,7 +12,7 @@
 
 - Use Solidity version `^0.8.28`
 - Follow Hardhat 3 ESM standards and `network.create()` API for TypeScript tests
-- If the commit relates to any Linear issue → Must use closing magic words for closing commits or non-closing magic words for non-closing commits.
+- If the commit relates to any Linear issue → Must use closing magic words for closing commits or non-closing magic words for non-closing commits. Refer to [`AGENTS.md`](file:///Users/gnepud/projects/holofi_protocol/AGENTS.md) for the full list of allowed magic words and formatting rules.
 - Always run `npx hardhat build && npx tsc --noEmit && npx hardhat test` for verification before completing any task
 
 ---
@@ -46,7 +46,6 @@ contract HoloFiLendingPoolFactoryTest is Test {
     MockERC20 public weth;
 
     address public admin = address(0x1111);
-    address public oracle = address(0x2222);
     address public user = address(0x3333);
 
     event PoolCreated(address indexed underlyingAsset, address poolAddress, string name, string symbol);
@@ -56,9 +55,6 @@ contract HoloFiLendingPoolFactoryTest is Test {
         factory = new HoloFiLendingPoolFactory(address(acm));
         eurc = new MockERC20("Euro Coin", "EURC", 6);
         weth = new MockERC20("Wrapped Ether", "WETH", 18);
-
-        vm.prank(admin);
-        acm.grantRole(acm.ORACLE_ROLE(), oracle);
     }
 
     function test_Constructor_InitialState() public view {
@@ -84,14 +80,6 @@ contract HoloFiLendingPoolFactoryTest is Test {
         assertEq(address(pool.asset()), address(eurc));
         assertEq(pool.name(), "HoloFi Pool EURC");
         assertEq(pool.symbol(), "pEURC");
-    }
-
-    function test_CreatePool_OracleSuccess() public {
-        vm.prank(oracle);
-        address poolAddr = factory.createPool(IERC20(address(weth)), "HoloFi Pool WETH", "pWETH");
-
-        assertEq(factory.getPool(address(weth)), poolAddr);
-        assertEq(factory.allPoolsLength(), 1);
     }
 
     function test_RevertIf_UnauthorizedCreatePool() public {
@@ -168,7 +156,7 @@ contract HoloFiLendingPoolFactory {
         string calldata name,
         string calldata symbol
     ) external returns (address pool) {
-        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender) && !acm.hasRole(acm.ORACLE_ROLE(), msg.sender)) {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedOperator(msg.sender);
         }
         if (address(asset) == address(0)) {
@@ -226,20 +214,17 @@ const { ethers, networkHelpers } = await network.create();
 
 describe("HoloFiLendingPoolFactory Integration Tests", function () {
   async function deployFactoryFixture() {
-    const [owner, admin, oracle, user, unauthorized] = await ethers.getSigners();
+    const [owner, admin, user, unauthorized] = await ethers.getSigners();
     const acm = await ethers.deployContract("AccessControlManager", [admin.address]);
     const factory = await ethers.deployContract("HoloFiLendingPoolFactory", [await acm.getAddress()]);
     const eurc = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     const weth = await ethers.deployContract("MockERC20", ["Wrapped Ether", "WETH", 18]);
 
-    const oracleRole = await acm.ORACLE_ROLE();
-    await acm.connect(admin).grantRole(oracleRole, oracle.address);
-
-    return { acm, factory, eurc, weth, owner, admin, oracle, user, unauthorized };
+    return { acm, factory, eurc, weth, owner, admin, user, unauthorized };
   }
 
-  it("Should allow admin or oracle to deploy pool and register in lookup mapping", async function () {
-    const { factory, eurc, weth, admin, oracle } = await networkHelpers.loadFixture(deployFactoryFixture);
+  it("Should allow admin to deploy pool and register in lookup mapping", async function () {
+    const { factory, eurc, weth, admin } = await networkHelpers.loadFixture(deployFactoryFixture);
 
     const eurcAddr = await eurc.getAddress();
     const wethAddr = await weth.getAddress();
@@ -251,7 +236,7 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
     expect(eurcPoolAddr).to.not.equal(ethers.ZeroAddress);
     expect(await factory.allPools(0n)).to.equal(eurcPoolAddr);
 
-    await expect(factory.connect(oracle).createPool(wethAddr, "HoloFi Pool WETH", "pWETH"))
+    await expect(factory.connect(admin).createPool(wethAddr, "HoloFi Pool WETH", "pWETH"))
       .to.emit(factory, "PoolCreated");
 
     const wethPoolAddr = await factory.getPool(wethAddr);
@@ -287,7 +272,7 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
 - [ ] **Step 2: Run build, typecheck, and full test suite**
 
 Run: `npx hardhat build && npx tsc --noEmit && npx hardhat test`
-Expected: PASS cleanly (64 total tests: 46 Solidity + 18 TypeScript/Mocha).
+Expected: PASS cleanly (67 total tests: 46 Solidity + 21 TypeScript/Mocha).
 
 - [ ] **Step 3: Commit Task 2 with Linear Magic Word**
 

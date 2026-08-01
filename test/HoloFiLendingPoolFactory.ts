@@ -5,16 +5,13 @@ const { ethers, networkHelpers } = await network.create();
 
 describe("HoloFiLendingPoolFactory Integration Tests", function () {
   async function deployFactoryFixture() {
-    const [owner, admin, oracle, user, unauthorized] = await ethers.getSigners();
+    const [owner, admin, user, unauthorized] = await ethers.getSigners();
     const acm = await ethers.deployContract("AccessControlManager", [admin.address]);
     const factory = await ethers.deployContract("HoloFiLendingPoolFactory", [await acm.getAddress()]);
     const eurc = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     const weth = await ethers.deployContract("MockERC20", ["Wrapped Ether", "WETH", 18]);
 
-    const oracleRole = await acm.ORACLE_ROLE();
-    await acm.connect(admin).grantRole(oracleRole, oracle.address);
-
-    return { acm, factory, eurc, weth, owner, admin, oracle, user, unauthorized };
+    return { acm, factory, eurc, weth, owner, admin, user, unauthorized };
   }
 
   it("Should allow admin to deploy pool and register in lookup mapping", async function () {

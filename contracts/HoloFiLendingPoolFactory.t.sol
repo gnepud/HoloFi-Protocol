@@ -15,7 +15,6 @@ contract HoloFiLendingPoolFactoryTest is Test {
     MockERC20 public weth;
 
     address public admin = address(0x1111);
-    address public oracle = address(0x2222);
     address public user = address(0x3333);
 
     event PoolCreated(address indexed underlyingAsset, address poolAddress, string name, string symbol);
@@ -25,10 +24,6 @@ contract HoloFiLendingPoolFactoryTest is Test {
         factory = new HoloFiLendingPoolFactory(address(acm));
         eurc = new MockERC20("Euro Coin", "EURC", 6);
         weth = new MockERC20("Wrapped Ether", "WETH", 18);
-
-        bytes32 oracleRole = acm.ORACLE_ROLE();
-        vm.prank(admin);
-        acm.grantRole(oracleRole, oracle);
     }
 
     function test_Constructor_InitialState() public view {
@@ -54,14 +49,6 @@ contract HoloFiLendingPoolFactoryTest is Test {
         assertEq(address(pool.asset()), address(eurc));
         assertEq(pool.name(), "HoloFi Pool EURC");
         assertEq(pool.symbol(), "pEURC");
-    }
-
-    function test_RevertIf_OracleCreatePool() public {
-        vm.prank(oracle);
-        vm.expectRevert(
-            abi.encodeWithSelector(HoloFiLendingPoolFactory.UnauthorizedOperator.selector, oracle)
-        );
-        factory.createPool(IERC20(address(weth)), "HoloFi Pool WETH", "pWETH");
     }
 
     function test_RevertIf_UnauthorizedCreatePool() public {
