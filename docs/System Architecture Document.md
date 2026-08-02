@@ -211,8 +211,27 @@ $$HF = \frac{\text{Vault FMV} \times \text{liquidationThresholdBps} \times 1\tex
 $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
 
 
+#### D. Oracle Valuation & Credit Execution Mechanics
 
-If this assertion fails, the transaction reverts with `InsufficientCollateralRatio()`.
+```solidity
+mapping(uint256 => uint256) public cardFmv; // Fast lookup mapping (tokenId => FMV)
+```
+
+* **Oracle Valuation Updates (`setCardFmv` / `setBatchCardFmv`)**:
+  - Restricted to `ORACLE_ROLE` or `ADMIN_ROLE`. Reverts `UnauthorizedOracle` if unauthorized.
+  - Emits `CardFmvUpdated(tokenId, fmv)` for each card price update.
+
+* **Vault Valuation Aggregation (`getVaultFMV`)**:
+  - Computes total collateral value by summing `cardFmv[tokenId]` across all deposited cards in `vaults[vaultId].tokenIds`.
+
+* **Credit Borrow Execution (`borrow`)**:
+  - Restricted to vault owner (`msg.sender == vault.owner`). Reverts `UnauthorizedVaultOwner` if unauthorized.
+  - Requires active vault status (`VaultNotActive`) and non-zero borrow amount (`ZeroBorrowAmount`).
+  - **Interest Accrual Guard**: Triggers `accrueInterest(vaultId)` **first** prior to state updates.
+  - **LTV Capacity Check**: Verifies `getTotalDebt(vaultId) + amount <= getMaxBorrowCapacity(getVaultFMV(vaultId))`. Reverts with `ExceedsMaxBorrowCapacity` if requested debt exceeds max LTV limit.
+  - Increases `vault.principalDebt += amount`.
+  - Executes `HoloFiLendingPool(lendingPool).drawLiquidity(vault.owner, amount)` to transfer underlying asset liquidity to store.
+  - Emits `BorrowExecuted(vaultId, vault.owner, lendingPool, amount, vault.principalDebt)`.
 
 ---
 
