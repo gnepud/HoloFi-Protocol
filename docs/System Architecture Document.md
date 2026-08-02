@@ -157,6 +157,7 @@ struct CollateralVault {
 
 AccessControlManager public immutable acm;
 HoloFiCardCollection public immutable nftCollection;
+HoloFiLendingPoolFactory public immutable poolFactory;
 
 mapping(uint256 => CollateralVault) public vaults;
 mapping(uint256 => uint256) public nftVaultId; // Fast lookup mapping (tokenId => vaultId)
@@ -178,9 +179,13 @@ uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
   - Executes `nftCollection.safeTransferFrom(msg.sender, address(this), tokenId)` and locks cards via `nftCollection.setCardLock(tokenId, true)` to prevent secondary transfers.
   - Registers `nftVaultId[tokenId] = vaultId` and pushes `tokenId` to `vault.tokenIds`.
 
-* **Escrow Withdrawal (`withdrawCollateral`)**:
-  - Stores can withdraw specific card NFTs when zero active debt remains (`principalDebt + accumulatedInterest == 0`). Reverts with `VaultHasActiveDebt` if active debt exists.
-  - Unlocks cards via `nftCollection.setCardLock(tokenId, false)` and returns NFTs via `nftCollection.safeTransferFrom(address(this), msg.sender, tokenId)`.
+* **LTV-Guarded Escrow Withdrawal (`withdrawCollateral`)**:
+  - Stores can withdraw specific card NFTs from their vault.
+  - **Interest Accrual Guard**: Triggers `accrueInterest(vaultId)` **first**.
+  - **Zero Debt vs Active Debt LTV Check**:
+    - If total debt is 0 (`currentTotalDebt == 0`): Allows withdrawing any or all requested `tokenIds`.
+    - If active debt exists (`currentTotalDebt > 0`): Computes remaining collateral value `remainingFmv` after removing `tokenIds`. Verifies `currentTotalDebt <= getMaxBorrowCapacity(remainingFmv)`. Reverts with `InsufficientCollateralRatio` if the remaining collateral breaches safety thresholds.
+  - Unlocks cards via `nftCollection.setCardLock(tokenId, false)` and returns NFTs via `nftCollection.safeTransferFrom(address(this), vault.owner, tokenId)`.
   - Clears `nftVaultId[tokenId]` and removes token from `vault.tokenIds`.
 
 #### C. Risk Engine & Accounting Mechanics
@@ -211,7 +216,7 @@ $$HF = \frac{\text{Vault FMV} \times \text{liquidationThresholdBps} \times 1\tex
 $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
 
 
-#### D. Oracle Valuation & Credit Execution Mechanics
+#### D. Oracle Valuation, Pool Guard & Debt Settlement Mechanics
 
 ```solidity
 mapping(uint256 => uint256) public cardFmv; // Fast lookup mapping (tokenId => FMV)
@@ -225,6 +230,7 @@ mapping(uint256 => uint256) public cardFmv; // Fast lookup mapping (tokenId => F
   - Computes total collateral value by summing `cardFmv[tokenId]` across all deposited cards in `vaults[vaultId].tokenIds`.
 
 * **Credit Borrow Execution (`borrow`)**:
+  - **Pool Security Guard**: Verifies `poolFactory.isValidPool(lendingPool)`. Reverts `UnregisteredLendingPool(lendingPool)` if pool is not registered in factory.
   - Restricted to vault owner (`msg.sender == vault.owner`). Reverts `UnauthorizedVaultOwner` if unauthorized.
   - Requires active vault status (`VaultNotActive`) and non-zero borrow amount (`ZeroBorrowAmount`).
   - **Interest Accrual Guard**: Triggers `accrueInterest(vaultId)` **first** prior to state updates.
@@ -233,21 +239,27 @@ mapping(uint256 => uint256) public cardFmv; // Fast lookup mapping (tokenId => F
   - Executes `HoloFiLendingPool(lendingPool).drawLiquidity(vault.owner, amount)` to transfer underlying asset liquidity to store.
   - Emits `BorrowExecuted(vaultId, vault.owner, lendingPool, amount, vault.principalDebt)`.
 
+* **Debt Repayment (`repay`)**:
+  - **Pool Security Guard**: Verifies `poolFactory.isValidPool(lendingPool)`. Reverts `UnregisteredLendingPool(lendingPool)` if pool is not registered in factory.
+  - Requires active vault status (`VaultNotActive`), non-zero amount (`ZeroRepayAmount`), and active debt (`NoActiveDebt`).
+  - **Interest Accrual Guard**: Triggers `accrueInterest(vaultId)` **first**.
+  - **Waterfall Allocation**: Pays off `accumulatedInterest` first, then reduces `principalDebt`. Caps repayment at total active debt.
+  - Calls `HoloFiLendingPool(lendingPool).returnLiquidity(msg.sender, actualRepay)` to transfer funds from payer into lending pool.
+  - Emits `RepaymentExecuted(vaultId, msg.sender, lendingPool, actualRepay, interestPaid, principalPaid, vault.principalDebt, vault.accumulatedInterest)`.
+
+* **Atomic Repay & Withdraw (`repayAndWithdraw`)**:
+  - Allows stores to pay down debt and release specific card NFTs in a single transaction.
+  - **Authorization Guard**: Explicitly verifies `vaults[vaultId].owner == msg.sender` if `withdrawTokenIds.length > 0` before executing repayment or withdrawal.
+  - Atomically calls `repay(vaultId, repayAmount, lendingPool)` and `withdrawCollateral(vaultId, withdrawTokenIds)`.
+
 ---
 
-### 3.4. Shared Liquidity Pool: `HoloFiLendingPool` (Generic ERC-4626)
+### 3.4. Multi-Asset Pool Factory & Liquidity Pools: `HoloFiLendingPoolFactory` & `HoloFiLendingPool`
 
-The `HoloFiLendingPool` is a **generic, permissioned ERC-4626 yield-bearing liquidity pool** that manages liquidity provided by Liquidity Providers (LPs). It can be deployed for any standard single ERC-20 underlying asset (e.g. USDC, EURC, USDT, or WETH).
-
-* **Generic ERC-4626 Vault & Share Tokens (`pToken`)**:
-  - Constructor takes `(IERC20 asset_, string memory name_, string memory symbol_, address _acm)`.
-  - Standard `deposit`, `mint`, `withdraw`, and `redeem` functions issue yield-bearing `pToken` shares (e.g. `pEURC`, `pUSDC`, `pWETH`) corresponding to the underlying asset.
-  - Role-based access control references `AccessControlManager` for admin management.
-
-* **Credit Engine Liquidity Controls**:
-  - `setLoanCore(address _loanCore)`: Registers the credit engine contract (`ADMIN_ROLE`).
-  - `drawLiquidity(address recipient, uint256 amount)`: Allows registered `loanCore` (or `ADMIN_ROLE`) to draw underlying assets for store borrowing.
-  - `returnLiquidity(address payer, uint256 amount)`: Allows registered `loanCore` (or `ADMIN_ROLE`) to accept repaid principal + accrued interest.
+* **Factory Registry & Pool Verification (`HoloFiLendingPoolFactory`)**:
+  - Maintains `mapping(address => address) public getPool` and `mapping(address => bool) public isValidPool`.
+  - Admin/Oracle deploys permissioned `HoloFiLendingPool` instances per ERC-20 asset via `createPool()`.
+  - Automatically marks `isValidPool[pool] = true` upon instantiation for protocol security verification.
 
 * **Illiquidity Gate**:
   If available free liquidity in the pool is insufficient during a borrow request (`IERC20(asset).balanceOf(address(this)) < amount`):
