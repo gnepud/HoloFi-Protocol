@@ -5,6 +5,7 @@ import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Rec
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiCardCollection } from "./HoloFiCardCollection.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
+import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 
 /**
  * @title HoloFiVaultLoanCore
@@ -25,6 +26,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
     AccessControlManager public immutable acm;
     HoloFiCardCollection public immutable nftCollection;
+    HoloFiLendingPoolFactory public immutable poolFactory;
 
     mapping(uint256 => CollateralVault) public vaults;
     mapping(uint256 => uint256) public nftVaultId;
@@ -76,6 +78,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
     error ZeroAddressACM();
     error ZeroAddressNFT();
+    error ZeroAddressPoolFactory();
+    error UnregisteredLendingPool(address pool);
     error KybRequired(address caller);
     error UnauthorizedVaultOwner(uint256 vaultId, address caller);
     error VaultNotActive(uint256 vaultId);
@@ -92,15 +96,19 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error ZeroRepayAmount();
     error NoActiveDebt(uint256 vaultId);
 
-    constructor(address _acm, address _nftCollection) {
+    constructor(address _acm, address _nftCollection, address _poolFactory) {
         if (_acm == address(0)) {
             revert ZeroAddressACM();
         }
         if (_nftCollection == address(0)) {
             revert ZeroAddressNFT();
         }
+        if (_poolFactory == address(0)) {
+            revert ZeroAddressPoolFactory();
+        }
         acm = AccessControlManager(_acm);
         nftCollection = HoloFiCardCollection(_nftCollection);
+        poolFactory = HoloFiLendingPoolFactory(_poolFactory);
     }
 
     function setRiskParameters(
@@ -285,6 +293,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     }
 
     function borrow(uint256 vaultId, uint256 amount, address lendingPool) external {
+        if (!poolFactory.isValidPool(lendingPool)) {
+            revert UnregisteredLendingPool(lendingPool);
+        }
         CollateralVault storage vault = vaults[vaultId];
         if (msg.sender != vault.owner) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
@@ -314,6 +325,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     }
 
     function repay(uint256 vaultId, uint256 amount, address lendingPool) external {
+        if (!poolFactory.isValidPool(lendingPool)) {
+            revert UnregisteredLendingPool(lendingPool);
+        }
         CollateralVault storage vault = vaults[vaultId];
         if (vault.status != VaultStatus.Active) {
             revert VaultNotActive(vaultId);

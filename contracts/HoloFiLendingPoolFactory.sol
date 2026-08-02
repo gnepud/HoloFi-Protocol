@@ -12,6 +12,7 @@ import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 contract HoloFiLendingPoolFactory {
     AccessControlManager public immutable acm;
     mapping(address => address) public getPool;
+    mapping(address => bool) public isValidPool;
     address[] public allPools;
 
     event PoolCreated(address indexed underlyingAsset, address poolAddress, string name, string symbol);
@@ -48,6 +49,7 @@ contract HoloFiLendingPoolFactory {
         pool = address(poolContract);
 
         getPool[address(asset)] = pool;
+        isValidPool[pool] = true;
         allPools.push(pool);
 
         emit PoolCreated(address(asset), pool, name, symbol);

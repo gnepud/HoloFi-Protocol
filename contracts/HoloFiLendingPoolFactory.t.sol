@@ -79,4 +79,15 @@ contract HoloFiLendingPoolFactoryTest is Test {
         );
         factory.createPool(IERC20(address(eurc)), "HoloFi Pool EURC", "pEURC");
     }
+
+    function test_CreatePool_SetsIsValidPool() public {
+        vm.prank(admin);
+        address pool = factory.createPool(IERC20(address(eurc)), "Pool EURC", "pEURC");
+
+        assertTrue(factory.isValidPool(pool));
+    }
+
+    function test_IsValidPool_UnregisteredPool() public view {
+        assertFalse(factory.isValidPool(address(0x9999)));
+    }
 }

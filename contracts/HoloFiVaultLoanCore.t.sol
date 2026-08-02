@@ -6,12 +6,15 @@ import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiCardCollection } from "./HoloFiCardCollection.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
+import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     AccessControlManager public acm;
     HoloFiCardCollection public cardCollection;
+    HoloFiLendingPoolFactory public poolFactory;
     HoloFiVaultLoanCore public loanCore;
 
     address public admin = address(0x1111);
@@ -34,7 +37,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     function setUp() public {
         acm = new AccessControlManager(admin);
         cardCollection = new HoloFiCardCollection("HoloFi TCG Cards", "HFC", address(acm));
-        loanCore = new HoloFiVaultLoanCore(address(acm), address(cardCollection));
+        poolFactory = new HoloFiLendingPoolFactory(address(acm));
+        loanCore = new HoloFiVaultLoanCore(address(acm), address(cardCollection), address(poolFactory));
 
         vm.startPrank(admin);
         acm.grantRole(acm.MINTER_ROLE(), minter);
@@ -54,17 +58,41 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     function test_Constructor_InitialState() public view {
         assertEq(address(loanCore.acm()), address(acm));
         assertEq(address(loanCore.nftCollection()), address(cardCollection));
+        assertEq(address(loanCore.poolFactory()), address(poolFactory));
         assertEq(loanCore.nextVaultId(), 1);
     }
 
     function test_RevertIf_Constructor_ZeroAddressACM() public {
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ZeroAddressACM.selector));
-        new HoloFiVaultLoanCore(address(0), address(cardCollection));
+        new HoloFiVaultLoanCore(address(0), address(cardCollection), address(poolFactory));
     }
 
     function test_RevertIf_Constructor_ZeroAddressNFT() public {
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ZeroAddressNFT.selector));
-        new HoloFiVaultLoanCore(address(acm), address(0));
+        new HoloFiVaultLoanCore(address(acm), address(0), address(poolFactory));
+    }
+
+    function test_RevertIf_Constructor_ZeroAddressPoolFactory() public {
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ZeroAddressPoolFactory.selector));
+        new HoloFiVaultLoanCore(address(acm), address(cardCollection), address(0));
+    }
+
+    function test_RevertIf_Borrow_UnregisteredLendingPool() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.UnregisteredLendingPool.selector, address(0x9999)));
+        loanCore.borrow(vaultId, 1000 * 1e6, address(0x9999));
+    }
+
+    function test_RevertIf_Repay_UnregisteredLendingPool() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.UnregisteredLendingPool.selector, address(0x9999)));
+        loanCore.repay(vaultId, 1000 * 1e6, address(0x9999));
     }
 
     function test_CreateVault_KybApprovedSuccess() public {
@@ -333,7 +361,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.setCardFmv(cardId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
-        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
 
         vm.prank(admin);
         pool.setLoanCore(address(loanCore));
@@ -365,7 +394,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.setCardFmv(cardId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
-        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
 
         vm.prank(store);
         vm.expectRevert(
@@ -384,7 +414,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         uint256 vaultId = loanCore.createVault();
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
-        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
 
         vm.prank(unauthorized);
         vm.expectRevert(
@@ -402,7 +433,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         uint256 vaultId = loanCore.createVault();
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
-        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
 
         vm.prank(store);
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ZeroBorrowAmount.selector));
@@ -426,7 +458,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.setCardFmv(cardId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
-        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
 
         vm.prank(admin);
         pool.setLoanCore(address(loanCore));
@@ -469,7 +502,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.setCardFmv(cardId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
-        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
 
         vm.prank(admin);
         pool.setLoanCore(address(loanCore));
@@ -505,7 +539,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         uint256 vaultId = loanCore.createVault();
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
-        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
 
         vm.prank(store);
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ZeroRepayAmount.selector));
@@ -517,7 +552,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         uint256 vaultId = loanCore.createVault();
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
-        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
 
         vm.prank(store);
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.NoActiveDebt.selector, vaultId));
