@@ -408,4 +408,119 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ZeroBorrowAmount.selector));
         loanCore.borrow(vaultId, 0, address(pool));
     }
+
+    function test_Repay_PartialInterestAndPrincipal() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        // Warp 1 year -> $200 interest accrued (5% of 4,000)
+        vm.warp(block.timestamp + 365 days);
+
+        // Mint asset to store to repay $1,200 ($200 interest + $1,000 principal)
+        asset.mint(store, 1_200 * 1e6);
+
+        vm.startPrank(store);
+        asset.approve(address(pool), 1_200 * 1e6);
+        loanCore.repay(vaultId, 1_200 * 1e6, address(pool));
+        vm.stopPrank();
+
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
+        assertEq(vault.accumulatedInterest, 0);
+        assertEq(vault.principalDebt, 3_000 * 1e6);
+    }
+
+    function test_Repay_FullLoanSettlementAndCollateralRelease() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        vm.warp(block.timestamp + 365 days); // $200 interest accrued
+
+        // Repay $5,000 (total debt = $4,200, overpayment capped at $4,200)
+        asset.mint(store, 5_000 * 1e6);
+
+        vm.startPrank(store);
+        asset.approve(address(pool), 5_000 * 1e6);
+        loanCore.repay(vaultId, 5_000 * 1e6, address(pool));
+        vm.stopPrank();
+
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
+        assertEq(vault.principalDebt, 0);
+        assertEq(vault.accumulatedInterest, 0);
+
+        // Withdraw collateral back to store
+        vm.prank(store);
+        loanCore.withdrawCollateral(vaultId, tokenIds);
+
+        assertEq(cardCollection.ownerOf(cardId1), store);
+    }
+
+    function test_RevertIf_Repay_ZeroAmount() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+
+        vm.prank(store);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ZeroRepayAmount.selector));
+        loanCore.repay(vaultId, 0, address(pool));
+    }
+
+    function test_RevertIf_Repay_NoActiveDebt() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+
+        vm.prank(store);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.NoActiveDebt.selector, vaultId));
+        loanCore.repay(vaultId, 1_000 * 1e6, address(pool));
+    }
 }

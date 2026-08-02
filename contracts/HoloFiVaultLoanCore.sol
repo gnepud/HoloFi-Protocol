@@ -63,6 +63,16 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         uint256 totalAccumulatedInterest,
         uint256 timestamp
     );
+    event RepaymentExecuted(
+        uint256 indexed vaultId,
+        address indexed payer,
+        address indexed lendingPool,
+        uint256 totalRepaid,
+        uint256 interestPaid,
+        uint256 principalPaid,
+        uint256 remainingPrincipalDebt,
+        uint256 remainingAccumulatedInterest
+    );
 
     error ZeroAddressACM();
     error ZeroAddressNFT();
@@ -79,6 +89,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error ZeroBorrowAmount();
     error ExceedsMaxBorrowCapacity(uint256 vaultId, uint256 requestedTotalDebt, uint256 maxBorrowCapacity);
     error ArrayLengthMismatch();
+    error ZeroRepayAmount();
+    error NoActiveDebt(uint256 vaultId);
 
     constructor(address _acm, address _nftCollection) {
         if (_acm == address(0)) {
@@ -299,6 +311,50 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         HoloFiLendingPool(lendingPool).drawLiquidity(vault.owner, amount);
 
         emit BorrowExecuted(vaultId, vault.owner, lendingPool, amount, vault.principalDebt);
+    }
+
+    function repay(uint256 vaultId, uint256 amount, address lendingPool) external {
+        CollateralVault storage vault = vaults[vaultId];
+        if (vault.status != VaultStatus.Active) {
+            revert VaultNotActive(vaultId);
+        }
+        if (amount == 0) {
+            revert ZeroRepayAmount();
+        }
+
+        accrueInterest(vaultId);
+
+        uint256 totalDebt = vault.accumulatedInterest + vault.principalDebt;
+        if (totalDebt == 0) {
+            revert NoActiveDebt(vaultId);
+        }
+
+        uint256 actualRepay = amount > totalDebt ? totalDebt : amount;
+        uint256 interestPaid;
+        uint256 principalPaid;
+
+        if (actualRepay <= vault.accumulatedInterest) {
+            vault.accumulatedInterest -= actualRepay;
+            interestPaid = actualRepay;
+        } else {
+            interestPaid = vault.accumulatedInterest;
+            principalPaid = actualRepay - interestPaid;
+            vault.accumulatedInterest = 0;
+            vault.principalDebt -= principalPaid;
+        }
+
+        HoloFiLendingPool(lendingPool).returnLiquidity(msg.sender, actualRepay);
+
+        emit RepaymentExecuted(
+            vaultId,
+            msg.sender,
+            lendingPool,
+            actualRepay,
+            interestPaid,
+            principalPaid,
+            vault.principalDebt,
+            vault.accumulatedInterest
+        );
     }
 
     function getVault(uint256 vaultId) external view returns (CollateralVault memory) {
