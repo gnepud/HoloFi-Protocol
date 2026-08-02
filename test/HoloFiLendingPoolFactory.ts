@@ -57,4 +57,11 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
     ).to.be.revertedWithCustomError(factory, "UnauthorizedOperator")
      .withArgs(unauthorized.address);
   });
+
+  it("Should set isValidPool to true when pool is created", async function () {
+    const { factory, eurc, admin } = await networkHelpers.loadFixture(deployFactoryFixture);
+    await factory.connect(admin).createPool(await eurc.getAddress(), "HoloFi Pool EURC", "pEURC");
+    const poolAddr = await factory.getPool(await eurc.getAddress());
+    expect(await factory.isValidPool(poolAddr)).to.be.true;
+  });
 });
