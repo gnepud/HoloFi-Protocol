@@ -110,4 +110,50 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     const safeHf = await loanCore.calculateHealthFactor(fmv, ethers.parseUnits("5000", 6));
     expect(safeHf).to.equal(ethers.parseEther("1.4"));
   });
+
+  it("Should allow oracle to set card FMVs, calculate vault FMV, and execute borrow from lending pool", async function () {
+    const { loanCore, cardCollection, acm, admin, store, minter } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    const oracleRole = await acm.ORACLE_ROLE();
+    await acm.connect(admin).grantRole(oracleRole, minter.address);
+
+    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    const pool = await ethers.deployContract("HoloFiLendingPool", [
+      await asset.getAddress(),
+      "Pool EURC",
+      "pEURC",
+      await acm.getAddress(),
+    ]);
+
+    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
+    await asset.mint(await pool.getAddress(), ethers.parseUnits("100000", 6));
+
+    await loanCore.connect(store).createVault();
+    await cardCollection.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
+
+    await loanCore.connect(minter).setBatchCardFmv(
+      [1n, 2n],
+      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+    );
+
+    expect(await loanCore.getVaultFMV(1n)).to.equal(ethers.parseUnits("10000", 6));
+
+    const poolAddr = await pool.getAddress();
+    const borrowAmount = ethers.parseUnits("4000", 6);
+
+    await expect(loanCore.connect(store).borrow(1n, borrowAmount, poolAddr))
+      .to.emit(loanCore, "BorrowExecuted")
+      .withArgs(1n, store.address, poolAddr, borrowAmount, borrowAmount);
+
+    expect(await asset.balanceOf(store.address)).to.equal(borrowAmount);
+    expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("96000", 6));
+
+    const vaultInfo = await loanCore.getVault(1n);
+    expect(vaultInfo.principalDebt).to.equal(borrowAmount);
+
+    await expect(
+      loanCore.connect(store).borrow(1n, ethers.parseUnits("2000", 6), poolAddr)
+    ).to.be.revertedWithCustomError(loanCore, "ExceedsMaxBorrowCapacity");
+  });
 });
