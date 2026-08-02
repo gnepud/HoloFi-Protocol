@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiCardCollection } from "./HoloFiCardCollection.sol";
+import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 
 /**
  * @title HoloFiVaultLoanCore
@@ -27,6 +28,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
     mapping(uint256 => CollateralVault) public vaults;
     mapping(uint256 => uint256) public nftVaultId;
+    mapping(uint256 => uint256) public cardFmv;
     uint256 public nextVaultId = 1;
 
     uint256 public constant BPS_DENOMINATOR = 10000;
@@ -41,6 +43,14 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     event VaultCreated(uint256 indexed vaultId, address indexed owner);
     event CollateralDeposited(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
     event CollateralWithdrawn(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
+    event CardFmvUpdated(uint256 indexed tokenId, uint256 fmv);
+    event BorrowExecuted(
+        uint256 indexed vaultId,
+        address indexed owner,
+        address indexed lendingPool,
+        uint256 amount,
+        uint256 newPrincipalDebt
+    );
     event RiskParametersUpdated(
         uint256 maxLtvBps,
         uint256 liquidationThresholdBps,
@@ -65,6 +75,10 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error TokenNotInVault(uint256 tokenId, uint256 vaultId);
     error InvalidRiskParameters();
     error UnauthorizedAdmin(address caller);
+    error UnauthorizedOracle(address caller);
+    error ZeroBorrowAmount();
+    error ExceedsMaxBorrowCapacity(uint256 vaultId, uint256 requestedTotalDebt, uint256 maxBorrowCapacity);
+    error ArrayLengthMismatch();
 
     constructor(address _acm, address _nftCollection) {
         if (_acm == address(0)) {
@@ -228,6 +242,63 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         }
 
         emit CollateralWithdrawn(vaultId, msg.sender, tokenIds);
+    }
+
+    function setCardFmv(uint256 tokenId, uint256 fmv) external {
+        if (!acm.hasRole(acm.ORACLE_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedOracle(msg.sender);
+        }
+        cardFmv[tokenId] = fmv;
+        emit CardFmvUpdated(tokenId, fmv);
+    }
+
+    function setBatchCardFmv(uint256[] calldata tokenIds, uint256[] calldata fmvs) external {
+        if (!acm.hasRole(acm.ORACLE_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedOracle(msg.sender);
+        }
+        if (tokenIds.length != fmvs.length) {
+            revert ArrayLengthMismatch();
+        }
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            cardFmv[tokenIds[i]] = fmvs[i];
+            emit CardFmvUpdated(tokenIds[i], fmvs[i]);
+        }
+    }
+
+    function getVaultFMV(uint256 vaultId) public view returns (uint256 totalFmv) {
+        uint256[] memory tokenIds = vaults[vaultId].tokenIds;
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            totalFmv += cardFmv[tokenIds[i]];
+        }
+    }
+
+    function borrow(uint256 vaultId, uint256 amount, address lendingPool) external {
+        CollateralVault storage vault = vaults[vaultId];
+        if (msg.sender != vault.owner) {
+            revert UnauthorizedVaultOwner(vaultId, msg.sender);
+        }
+        if (vault.status != VaultStatus.Active) {
+            revert VaultNotActive(vaultId);
+        }
+        if (amount == 0) {
+            revert ZeroBorrowAmount();
+        }
+
+        accrueInterest(vaultId);
+
+        uint256 vaultFmv = getVaultFMV(vaultId);
+        uint256 maxBorrow = getMaxBorrowCapacity(vaultFmv);
+        uint256 newTotalDebt = getTotalDebt(vaultId) + amount;
+
+        if (newTotalDebt > maxBorrow) {
+            revert ExceedsMaxBorrowCapacity(vaultId, newTotalDebt, maxBorrow);
+        }
+
+        vault.principalDebt += amount;
+
+        HoloFiLendingPool(lendingPool).drawLiquidity(vault.owner, amount);
+
+        emit BorrowExecuted(vaultId, vault.owner, lendingPool, amount, vault.principalDebt);
     }
 
     function getVault(uint256 vaultId) external view returns (CollateralVault memory) {

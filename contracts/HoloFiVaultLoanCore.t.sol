@@ -5,6 +5,8 @@ import { Test } from "forge-std/Test.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiCardCollection } from "./HoloFiCardCollection.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
+import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
+import { MockERC20 } from "./mocks/MockERC20.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
@@ -16,6 +18,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     address public minter = address(0x2222);
     address public store = address(0x3333);
     address public unauthorized = address(0x4444);
+    address public oracle = address(0x5555);
 
     uint256 public cardId1;
     uint256 public cardId2;
@@ -35,6 +38,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
 
         vm.startPrank(admin);
         acm.grantRole(acm.MINTER_ROLE(), minter);
+        acm.grantRole(acm.ORACLE_ROLE(), oracle);
         acm.grantRole(acm.ADMIN_ROLE(), address(loanCore));
         acm.setKybStatus(store, true);
         vm.stopPrank();
@@ -246,5 +250,162 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         assertEq(vault.accumulatedInterest, 500 * 1e6);
         assertEq(loanCore.getPendingInterest(vaultId), 0);
         assertEq(loanCore.getTotalDebt(vaultId), 10_500 * 1e6);
+    }
+
+    function test_SetCardFmv_Success() public {
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        assertEq(loanCore.cardFmv(cardId1), 5_000 * 1e6);
+    }
+
+    function test_SetBatchCardFmv_Success() public {
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = cardId1;
+        tokenIds[1] = cardId2;
+
+        uint256[] memory fmvs = new uint256[](2);
+        fmvs[0] = 6_000 * 1e6;
+        fmvs[1] = 4_000 * 1e6;
+
+        vm.prank(oracle);
+        loanCore.setBatchCardFmv(tokenIds, fmvs);
+
+        assertEq(loanCore.cardFmv(cardId1), 6_000 * 1e6);
+        assertEq(loanCore.cardFmv(cardId2), 4_000 * 1e6);
+    }
+
+    function test_RevertIf_SetCardFmv_Unauthorized() public {
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.UnauthorizedOracle.selector, unauthorized));
+        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+    }
+
+    function test_RevertIf_SetBatchCardFmv_LengthMismatch() public {
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = cardId1;
+        tokenIds[1] = cardId2;
+
+        uint256[] memory fmvs = new uint256[](1);
+        fmvs[0] = 6_000 * 1e6;
+
+        vm.prank(oracle);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ArrayLengthMismatch.selector));
+        loanCore.setBatchCardFmv(tokenIds, fmvs);
+    }
+
+    function test_GetVaultFMV() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = cardId1;
+        tokenIds[1] = cardId2;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.startPrank(oracle);
+        loanCore.setCardFmv(cardId1, 6_000 * 1e6);
+        loanCore.setCardFmv(cardId2, 4_000 * 1e6);
+        vm.stopPrank();
+
+        assertEq(loanCore.getVaultFMV(vaultId), 10_000 * 1e6);
+    }
+
+    function test_Borrow_Success() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = cardId1;
+        tokenIds[1] = cardId2;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
+        assertEq(vault.principalDebt, 4_000 * 1e6);
+        assertEq(asset.balanceOf(store), 4_000 * 1e6);
+    }
+
+    function test_RevertIf_Borrow_ExceedsMaxBorrowCapacity() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+
+        vm.prank(store);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HoloFiVaultLoanCore.ExceedsMaxBorrowCapacity.selector,
+                vaultId,
+                6_000 * 1e6,
+                5_000 * 1e6
+            )
+        );
+        loanCore.borrow(vaultId, 6_000 * 1e6, address(pool));
+    }
+
+    function test_RevertIf_Borrow_UnauthorizedOwner() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+
+        vm.prank(unauthorized);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HoloFiVaultLoanCore.UnauthorizedVaultOwner.selector,
+                vaultId,
+                unauthorized
+            )
+        );
+        loanCore.borrow(vaultId, 1_000 * 1e6, address(pool));
+    }
+
+    function test_RevertIf_Borrow_ZeroAmount() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        HoloFiLendingPool pool = new HoloFiLendingPool(asset, "Pool EURC", "pEURC", address(acm));
+
+        vm.prank(store);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.ZeroBorrowAmount.selector));
+        loanCore.borrow(vaultId, 0, address(pool));
     }
 }
