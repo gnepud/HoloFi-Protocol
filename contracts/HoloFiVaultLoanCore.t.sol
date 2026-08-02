@@ -559,4 +559,155 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.NoActiveDebt.selector, vaultId));
         loanCore.repay(vaultId, 1_000 * 1e6, address(pool));
     }
+
+    function test_WithdrawCollateral_PartialExcessCollateral() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = cardId1;
+        tokenIds[1] = cardId2;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.startPrank(oracle);
+        loanCore.setCardFmv(cardId1, 6_000 * 1e6);
+        loanCore.setCardFmv(cardId2, 4_000 * 1e6);
+        vm.stopPrank();
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        // Borrow $3,000 (total FMV = $10,000, max borrow = $5,000)
+        vm.prank(store);
+        loanCore.borrow(vaultId, 3_000 * 1e6, address(pool));
+
+        // Withdraw cardId2 ($4,000 FMV). Remaining FMV = $6,000 (max borrow = $3,000). Debt = $3,000 -> succeeds
+        uint256[] memory withdrawTokens = new uint256[](1);
+        withdrawTokens[0] = cardId2;
+
+        vm.prank(store);
+        loanCore.withdrawCollateral(vaultId, withdrawTokens);
+
+        assertEq(cardCollection.ownerOf(cardId2), store);
+    }
+
+    function test_RevertIf_WithdrawCollateral_InsufficientCollateralRatio() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = cardId1;
+        tokenIds[1] = cardId2;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.startPrank(oracle);
+        loanCore.setCardFmv(cardId1, 6_000 * 1e6);
+        loanCore.setCardFmv(cardId2, 4_000 * 1e6);
+        vm.stopPrank();
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        // Borrow $4,000 (total FMV = $10,000, max borrow = $5,000)
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        // Attempt to withdraw cardId1 ($6,000 FMV). Remaining FMV = $4,000 (max borrow = $2,000). Debt = $4,000 -> reverts
+        uint256[] memory withdrawTokens = new uint256[](1);
+        withdrawTokens[0] = cardId1;
+
+        vm.prank(store);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HoloFiVaultLoanCore.InsufficientCollateralRatio.selector,
+                vaultId,
+                4_000 * 1e6,
+                2_000 * 1e6
+            )
+        );
+        loanCore.withdrawCollateral(vaultId, withdrawTokens);
+    }
+
+    function test_RepayAndWithdraw_Success() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = cardId1;
+        tokenIds[1] = cardId2;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.startPrank(oracle);
+        loanCore.setCardFmv(cardId1, 6_000 * 1e6);
+        loanCore.setCardFmv(cardId2, 4_000 * 1e6);
+        vm.stopPrank();
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        asset.mint(store, 2_000 * 1e6);
+
+        uint256[] memory withdrawTokens = new uint256[](1);
+        withdrawTokens[0] = cardId1;
+
+        vm.startPrank(store);
+        asset.approve(address(pool), 2_000 * 1e6);
+        loanCore.repayAndWithdraw(vaultId, 2_000 * 1e6, address(pool), withdrawTokens);
+        vm.stopPrank();
+
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
+        assertEq(vault.principalDebt, 2_000 * 1e6);
+        assertEq(cardCollection.ownerOf(cardId1), store);
+    }
+
+    function test_RevertIf_RepayAndWithdraw_Unauthorized() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        uint256[] memory withdrawTokens = new uint256[](1);
+        withdrawTokens[0] = cardId1;
+
+        vm.prank(unauthorized);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HoloFiVaultLoanCore.UnauthorizedVaultOwner.selector,
+                vaultId,
+                unauthorized
+            )
+        );
+        loanCore.repayAndWithdraw(vaultId, 0, address(0), withdrawTokens);
+    }
 }

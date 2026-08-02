@@ -95,6 +95,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error ArrayLengthMismatch();
     error ZeroRepayAmount();
     error NoActiveDebt(uint256 vaultId);
+    error InsufficientCollateralRatio(uint256 vaultId, uint256 totalDebt, uint256 remainingMaxBorrow);
 
     constructor(address _acm, address _nftCollection, address _poolFactory) {
         if (_acm == address(0)) {
@@ -231,7 +232,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         emit CollateralDeposited(vaultId, msg.sender, tokenIds);
     }
 
-    function withdrawCollateral(uint256 vaultId, uint256[] calldata tokenIds) external {
+    function withdrawCollateral(uint256 vaultId, uint256[] calldata tokenIds) public {
         CollateralVault storage vault = vaults[vaultId];
         if (vault.owner != msg.sender) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
@@ -239,29 +240,68 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         if (vault.status != VaultStatus.Active) {
             revert VaultNotActive(vaultId);
         }
-        if (tokenIds.length == 0) {
+        uint256 len = tokenIds.length;
+        if (len == 0) {
             revert EmptyTokenIdsList();
         }
 
-        uint256 totalDebt = vault.principalDebt + vault.accumulatedInterest;
-        if (totalDebt > 0) {
-            revert VaultHasActiveDebt(vaultId, totalDebt);
+        accrueInterest(vaultId);
+
+        uint256 currentTotalDebt = getTotalDebt(vaultId);
+
+        if (currentTotalDebt > 0) {
+            uint256 withdrawnFmv = 0;
+            for (uint256 i = 0; i < len; i++) {
+                uint256 tokenId = tokenIds[i];
+                if (nftVaultId[tokenId] != vaultId) {
+                    revert TokenNotInVault(tokenId, vaultId);
+                }
+                withdrawnFmv += cardFmv[tokenId];
+            }
+
+            uint256 totalFmv = getVaultFMV(vaultId);
+            uint256 remainingFmv = totalFmv > withdrawnFmv ? totalFmv - withdrawnFmv : 0;
+            uint256 remainingMaxBorrow = getMaxBorrowCapacity(remainingFmv);
+
+            if (currentTotalDebt > remainingMaxBorrow) {
+                revert InsufficientCollateralRatio(vaultId, currentTotalDebt, remainingMaxBorrow);
+            }
         }
 
-        for (uint256 i = 0; i < tokenIds.length; i++) {
+        for (uint256 i = 0; i < len; i++) {
             uint256 tokenId = tokenIds[i];
-            if (nftVaultId[tokenId] != vaultId) {
+            if (currentTotalDebt == 0 && nftVaultId[tokenId] != vaultId) {
                 revert TokenNotInVault(tokenId, vaultId);
             }
 
-            nftCollection.setCardLock(tokenId, false);
-            nftCollection.safeTransferFrom(address(this), msg.sender, tokenId);
-
             _removeTokenFromVault(vault, tokenId);
-            delete nftVaultId[tokenId];
+            nftVaultId[tokenId] = 0;
+            nftCollection.setCardLock(tokenId, false);
+            nftCollection.safeTransferFrom(address(this), vault.owner, tokenId);
         }
 
-        emit CollateralWithdrawn(vaultId, msg.sender, tokenIds);
+        emit CollateralWithdrawn(vaultId, vault.owner, tokenIds);
+    }
+
+    function repayAndWithdraw(
+        uint256 vaultId,
+        uint256 repayAmount,
+        address lendingPool,
+        uint256[] calldata withdrawTokenIds
+    ) external {
+        if (withdrawTokenIds.length > 0) {
+            if (vaults[vaultId].owner != msg.sender) {
+                revert UnauthorizedVaultOwner(vaultId, msg.sender);
+            }
+        }
+
+        if (repayAmount > 0) {
+            repay(vaultId, repayAmount, lendingPool);
+        }
+
+        if (withdrawTokenIds.length > 0) {
+            withdrawCollateral(vaultId, withdrawTokenIds);
+        }
     }
 
     function setCardFmv(uint256 tokenId, uint256 fmv) external {
@@ -324,7 +364,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         emit BorrowExecuted(vaultId, vault.owner, lendingPool, amount, vault.principalDebt);
     }
 
-    function repay(uint256 vaultId, uint256 amount, address lendingPool) external {
+    function repay(uint256 vaultId, uint256 amount, address lendingPool) public {
         if (!poolFactory.isValidPool(lendingPool)) {
             revert UnregisteredLendingPool(lendingPool);
         }
