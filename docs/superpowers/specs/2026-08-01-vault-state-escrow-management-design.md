@@ -33,7 +33,7 @@ struct CollateralVault {
     uint256[] tokenIds;          // List of deposited NFT token IDs
     uint256 principalDebt;       // Borrowed capital
     uint256 accumulatedInterest; // Unpaid accrued interest
-    uint256 lastInterestUpdate;  // Timestamp of last interest calculation
+    uint256 lastInterestUpdateTime;  // Timestamp of last interest calculation
     VaultStatus status;
 }
 
@@ -74,7 +74,7 @@ event CollateralWithdrawn(uint256 indexed vaultId, address indexed owner, uint25
 - **KYB Check**: Reverts `KybRequired(msg.sender)` if `!acm.isKybApproved(msg.sender)`.
 - Logic:
   1. `vaultId = nextVaultId++`.
-  2. Initializes `vaults[vaultId]` with `owner = msg.sender`, `status = VaultStatus.Active`, `lastInterestUpdate = block.timestamp`.
+  2. Initializes `vaults[vaultId]` with `owner = msg.sender`, `status = VaultStatus.Active`, `lastInterestUpdateTime = block.timestamp`.
   3. Emits `VaultCreated(vaultId, msg.sender)`.
   4. Returns `vaultId`.
 

@@ -238,7 +238,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         uint256[] tokenIds;          // List of deposited NFT token IDs
         uint256 principalDebt;       // Borrowed capital
         uint256 accumulatedInterest; // Unpaid accrued interest
-        uint256 lastInterestUpdate;  // Timestamp of last interest calculation
+        uint256 lastInterestUpdateTime;  // Timestamp of last interest calculation
         VaultStatus status;
     }
 
@@ -295,7 +295,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
             tokenIds: new uint256[](0),
             principalDebt: 0,
             accumulatedInterest: 0,
-            lastInterestUpdate: block.timestamp,
+            lastInterestUpdateTime: block.timestamp,
             status: VaultStatus.Active
         });
 

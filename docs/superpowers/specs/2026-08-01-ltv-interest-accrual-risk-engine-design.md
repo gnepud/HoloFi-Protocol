@@ -58,16 +58,16 @@ event InterestAccrued(
 - **Logic**: Updates state variables and emits `RiskParametersUpdated`.
 
 #### `accrueInterest(uint256 vaultId) public`
-- Calculates elapsed time $\Delta t = \text{block.timestamp} - \text{vault.lastInterestUpdate}$.
+- Calculates elapsed time $\Delta t = \text{block.timestamp} - \text{vault.lastInterestUpdateTime}$.
 - If $\Delta t > 0$:
   - If `vault.principalDebt > 0`:
     - $\text{interestNew} = \frac{\text{vault.principalDebt} \times \text{borrowRateBpsPerYear} \times \Delta t}{\text{BPS\_DENOMINATOR} \times \text{SECONDS\_PER\_YEAR}}$
     - `vault.accumulatedInterest += interestNew`
     - Emits `InterestAccrued(vaultId, interestNew, vault.accumulatedInterest, block.timestamp)`.
-  - `vault.lastInterestUpdate = block.timestamp`.
+  - `vault.lastInterestUpdateTime = block.timestamp`.
 
 #### `getPendingInterest(uint256 vaultId) public view returns (uint256)`
-- Calculates pending un-accrued interest for `vaultId` since `lastInterestUpdate` without mutating state. Returns 0 if `principalDebt == 0` or `dt == 0`.
+- Calculates pending un-accrued interest for `vaultId` since `lastInterestUpdateTime` without mutating state. Returns 0 if `principalDebt == 0` or `dt == 0`.
 
 #### `getTotalDebt(uint256 vaultId) public view returns (uint256)`
 - Returns `vault.principalDebt + vault.accumulatedInterest + getPendingInterest(vaultId)`.
@@ -90,7 +90,7 @@ event InterestAccrued(
 1. `test_SetRiskParameters_Success`: Admin updates parameters, verifying state and `RiskParametersUpdated` event emission.
 2. `test_RevertIf_SetRiskParameters_Unauthorized`: Non-admin caller reverts `UnauthorizedAdmin`.
 3. `test_RevertIf_SetRiskParameters_InvalidParameters`: Passing `_maxLtvBps > _liquidationThresholdBps` reverts `InvalidRiskParameters`.
-4. `test_AccrueInterest_TimeWarp`: Set principal debt, advance time via `vm.warp(365 days)`, call `accrueInterest(vaultId)`, verify 5% interest accrued and `lastInterestUpdate` updated.
+4. `test_AccrueInterest_TimeWarp`: Set principal debt, advance time via `vm.warp(365 days)`, call `accrueInterest(vaultId)`, verify 5% interest accrued and `lastInterestUpdateTime` updated.
 5. `test_CalculateHealthFactor_ZeroDebt`: Verify returns `type(uint256).max`.
 6. `test_CalculateHealthFactor_AboveAndBelowOne`: Test $HF > 1\text{e}18$ for safe collateral ratio and $HF < 1\text{e}18$ for undercollateralized state.
 7. `test_GetMaxBorrowCapacity`: Verify max borrow capacity equals `vaultFmv * 50%`.

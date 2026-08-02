@@ -151,7 +151,7 @@ struct CollateralVault {
     uint256[] tokenIds;             // List of deposited NFT token IDs (from global collection)
     uint256 principalDebt;          // Borrowed capital
     uint256 accumulatedInterest;    // Unpaid accrued interest
-    uint256 lastInterestUpdate;     // Timestamp of last interest calculation
+    uint256 lastInterestUpdateTime;     // Timestamp of last interest calculation
     VaultStatus status;
 }
 
@@ -190,7 +190,7 @@ uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
 
 * **Continuous Interest Accrual (`accrueInterest`)**:
 
-$$\Delta t = \text{block.timestamp} - \text{lastInterestUpdate}$$
+$$\Delta t = \text{block.timestamp} - \text{lastInterestUpdateTime}$$
 
 
 $$\text{Interest}_{\text{new}} = \frac{\text{principalDebt} \times \text{borrowRateBpsPerYear} \times \Delta t}{10000 \times 365\text{ days}}$$

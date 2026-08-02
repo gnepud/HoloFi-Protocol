@@ -136,7 +136,7 @@ Update `contracts/HoloFiVaultLoanCore.sol`:
 
     function accrueInterest(uint256 vaultId) public {
         CollateralVault storage vault = vaults[vaultId];
-        uint256 dt = block.timestamp - vault.lastInterestUpdate;
+        uint256 dt = block.timestamp - vault.lastInterestUpdateTime;
         if (dt == 0) return;
 
         if (vault.principalDebt > 0) {
@@ -145,12 +145,12 @@ Update `contracts/HoloFiVaultLoanCore.sol`:
             vault.accumulatedInterest += interestNew;
             emit InterestAccrued(vaultId, interestNew, vault.accumulatedInterest, block.timestamp);
         }
-        vault.lastInterestUpdate = block.timestamp;
+        vault.lastInterestUpdateTime = block.timestamp;
     }
 
     function getPendingInterest(uint256 vaultId) public view returns (uint256) {
         CollateralVault memory vault = vaults[vaultId];
-        uint256 dt = block.timestamp - vault.lastInterestUpdate;
+        uint256 dt = block.timestamp - vault.lastInterestUpdateTime;
         if (dt == 0 || vault.principalDebt == 0) return 0;
 
         return (vault.principalDebt * borrowRateBpsPerYear * dt) / (BPS_DENOMINATOR * SECONDS_PER_YEAR);
