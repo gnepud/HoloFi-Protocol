@@ -235,5 +235,81 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     ).to.be.revertedWithCustomError(loanCore, "UnregisteredLendingPool")
      .withArgs(unauthorized.address);
   });
+
+  it("Should allow store to withdraw excess collateral when remaining FMV satisfies LTV ratio", async function () {
+    const { loanCore, cardCollection, acm, admin, store, minter, poolFactory } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    const oracleRole = await acm.ORACLE_ROLE();
+    await acm.connect(admin).grantRole(oracleRole, minter.address);
+
+    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
+    const poolAddr = await poolFactory.getPool(await asset.getAddress());
+    const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
+
+    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
+    await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
+
+    await loanCore.connect(store).createVault();
+    await cardCollection.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
+
+    await loanCore.connect(minter).setBatchCardFmv(
+      [1n, 2n],
+      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+    );
+
+    // Borrow $2,500 (total FMV = $10,000, max borrow = $5,000)
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("2500", 6), poolAddr);
+
+    // Attempt to withdraw card 1 ($6,000 FMV). Remaining FMV = $4,000 (max borrow = $2,000). Debt = $2,500 -> reverts
+    await expect(
+      loanCore.connect(store).withdrawCollateral(1n, [1n])
+    ).to.be.revertedWithCustomError(loanCore, "InsufficientCollateralRatio");
+
+    // Withdraw card 2 ($4,000 FMV). Remaining FMV = $6,000 (max borrow = $3,000). Debt = $2,500 -> succeeds
+    await loanCore.connect(store).withdrawCollateral(1n, [2n]);
+
+    expect(await cardCollection.ownerOf(2n)).to.equal(store.address);
+  });
+
+  it("Should allow store to execute atomic repayAndWithdraw to reduce debt and free collateral", async function () {
+    const { loanCore, cardCollection, acm, admin, store, minter, poolFactory } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    const oracleRole = await acm.ORACLE_ROLE();
+    await acm.connect(admin).grantRole(oracleRole, minter.address);
+
+    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
+    const poolAddr = await poolFactory.getPool(await asset.getAddress());
+    const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
+
+    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
+    await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
+
+    await loanCore.connect(store).createVault();
+    await cardCollection.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
+
+    await loanCore.connect(minter).setBatchCardFmv(
+      [1n, 2n],
+      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+    );
+
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
+
+    await asset.mint(store.address, ethers.parseUnits("2001", 6));
+    await asset.connect(store).approve(poolAddr, ethers.parseUnits("2001", 6));
+
+    // Repay $2,000 + accrued interest and withdraw card 1 ($6,000 FMV). Remaining debt <= $2,000, remaining FMV = $4,000 (max borrow = $2,000) -> succeeds
+    const repayAmount = ethers.parseUnits("2000", 6) + 100n;
+    await loanCore.connect(store).repayAndWithdraw(1n, repayAmount, poolAddr, [1n]);
+
+    expect(await cardCollection.ownerOf(1n)).to.equal(store.address);
+
+    const vaultInfo = await loanCore.getVault(1n);
+    expect(vaultInfo.principalDebt).to.be.lte(ethers.parseUnits("2000", 6));
+  });
 });
+
 
