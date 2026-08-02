@@ -156,4 +156,74 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       loanCore.connect(store).borrow(1n, ethers.parseUnits("2000", 6), poolAddr)
     ).to.be.revertedWithCustomError(loanCore, "ExceedsMaxBorrowCapacity");
   });
+
+  it("Should allow store to execute full loan repayment and release collateral NFTs", async function () {
+    const { loanCore, cardCollection, acm, admin, store, minter } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    const oracleRole = await acm.ORACLE_ROLE();
+    await acm.connect(admin).grantRole(oracleRole, minter.address);
+
+    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    const pool = await ethers.deployContract("HoloFiLendingPool", [
+      await asset.getAddress(),
+      "Pool EURC",
+      "pEURC",
+      await acm.getAddress(),
+    ]);
+
+    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
+    await asset.mint(await pool.getAddress(), ethers.parseUnits("100000", 6));
+
+    await loanCore.connect(store).createVault();
+    await cardCollection.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
+
+    await loanCore.connect(minter).setBatchCardFmv(
+      [1n, 2n],
+      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+    );
+
+    const poolAddr = await pool.getAddress();
+    const borrowTx = await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
+    const borrowBlock = await ethers.provider.getBlock(borrowTx.blockNumber!);
+    const borrowTimestamp = borrowBlock!.timestamp;
+
+    await asset.mint(store.address, ethers.parseUnits("200", 6));
+    await asset.connect(store).approve(poolAddr, ethers.MaxUint256);
+
+    await networkHelpers.time.setNextBlockTimestamp(borrowTimestamp + 86400 * 365);
+
+    const totalDebt = ethers.parseUnits("4200", 6);
+
+    await expect(loanCore.connect(store).repay(1n, totalDebt, poolAddr))
+      .to.emit(loanCore, "RepaymentExecuted")
+      .withArgs(
+        1n,
+        store.address,
+        poolAddr,
+        totalDebt,
+        ethers.parseUnits("200", 6),
+        ethers.parseUnits("4000", 6),
+        0n,
+        0n
+      );
+
+    const vaultInfo = await loanCore.getVault(1n);
+    expect(vaultInfo.principalDebt).to.equal(0n);
+    expect(vaultInfo.accumulatedInterest).to.equal(0n);
+    expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("100200", 6));
+
+    await expect(loanCore.connect(store).withdrawCollateral(1n, [1n, 2n]))
+      .to.emit(loanCore, "CollateralWithdrawn")
+      .withArgs(1n, store.address, [1n, 2n]);
+
+    expect(await cardCollection.ownerOf(1n)).to.equal(store.address);
+    expect(await cardCollection.ownerOf(2n)).to.equal(store.address);
+
+    const card1Info = await cardCollection.getCard(1n);
+    const card2Info = await cardCollection.getCard(2n);
+    expect(card1Info.isLocked).to.be.false;
+    expect(card2Info.isLocked).to.be.false;
+  });
 });
+
