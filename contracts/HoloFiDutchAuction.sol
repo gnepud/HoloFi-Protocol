@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
-import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 
-contract HoloFiDutchAuction {
+contract HoloFiDutchAuction is ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     struct Auction {
         uint256 vaultId;
         uint256 startFmv;
         uint256 startPrice;
+        uint256 debtAmount;
+        uint256 penaltyAmount;
         uint256 reservePrice;
         uint256 startTime;
         uint256 duration;
@@ -43,6 +49,7 @@ contract HoloFiDutchAuction {
         address indexed lendingPool,
         uint256 finalPrice,
         uint256 debtPaid,
+        uint256 penaltyPaid,
         uint256 surplusToSeller
     );
 
@@ -52,6 +59,7 @@ contract HoloFiDutchAuction {
     error AuctionAlreadyStarted(uint256 vaultId);
     error AuctionNotActive(uint256 vaultId);
     error UnregisteredLendingPool(address pool);
+    error InsufficientAuctionPrice(uint256 currentPrice, uint256 reservePrice);
 
     constructor(address _acm, address _loanCore, address _poolFactory) {
         if (_acm == address(0)) revert ZeroAddressACM();
@@ -73,9 +81,12 @@ contract HoloFiDutchAuction {
 
         uint256 startFmv = loanCore.getVaultFMV(vaultId);
         uint256 totalDebt = loanCore.getTotalDebt(vaultId);
+        uint256 penaltyBps = loanCore.liquidationPenaltyBps();
+
+        uint256 penaltyAmount = (totalDebt * penaltyBps) / BPS_DENOMINATOR;
+        uint256 reservePrice = totalDebt + penaltyAmount;
 
         uint256 startPrice = (startFmv * START_PRICE_BPS) / BPS_DENOMINATOR;
-        uint256 reservePrice = totalDebt;
         if (startPrice < reservePrice) {
             startPrice = reservePrice;
         }
@@ -86,6 +97,8 @@ contract HoloFiDutchAuction {
             vaultId: vaultId,
             startFmv: startFmv,
             startPrice: startPrice,
+            debtAmount: totalDebt,
+            penaltyAmount: penaltyAmount,
             reservePrice: reservePrice,
             startTime: block.timestamp,
             duration: DEFAULT_AUCTION_DURATION,
@@ -96,7 +109,7 @@ contract HoloFiDutchAuction {
         emit AuctionStarted(vaultId, startPrice, reservePrice, block.timestamp, DEFAULT_AUCTION_DURATION);
     }
 
-    function getAuctionPrice(uint256 vaultId) public view returns (uint256) {
+    function getAuctionPrice(uint256 vaultId) public view virtual returns (uint256) {
         Auction memory auction = auctions[vaultId];
         if (auction.startTime == 0 || auction.isSettled) {
             return 0;
@@ -111,7 +124,7 @@ contract HoloFiDutchAuction {
         return auction.startPrice - priceDrop;
     }
 
-    function settleAuction(uint256 vaultId, address lendingPool) external {
+    function settleAuction(uint256 vaultId, address lendingPool) external nonReentrant {
         Auction storage auction = auctions[vaultId];
         if (auction.startTime == 0 || auction.isSettled) {
             revert AuctionNotActive(vaultId);
@@ -121,24 +134,41 @@ contract HoloFiDutchAuction {
         }
 
         uint256 currentPrice = getAuctionPrice(vaultId);
-        uint256 debtPaid = auction.reservePrice;
-        uint256 surplus = currentPrice > debtPaid ? currentPrice - debtPaid : 0;
+        uint256 debtPaid = auction.debtAmount;
+        uint256 penaltyPaid = auction.penaltyAmount;
+        uint256 reservePrice = auction.reservePrice;
+
+        if (currentPrice < reservePrice) {
+            revert InsufficientAuctionPrice(currentPrice, reservePrice);
+        }
+
+        uint256 surplus = currentPrice - reservePrice;
 
         auction.isSettled = true;
 
-        // 1. Pay off pool debt
-        HoloFiLendingPool(lendingPool).returnLiquidity(msg.sender, debtPaid);
+        IERC20 asset = IERC20(HoloFiLendingPool(lendingPool).asset());
 
-        // 2. Transfer surplus to original store
-        if (surplus > 0) {
-            IERC20 asset = IERC20(HoloFiLendingPool(lendingPool).asset());
-            asset.transferFrom(msg.sender, auction.seller, surplus);
+        // Step 1: Pull full currentPrice from liquidator to DutchAuction contract
+        asset.safeTransferFrom(msg.sender, address(this), currentPrice);
+
+        // Step 2: Approve & return loan debt (debtPaid) to LendingPool
+        asset.forceApprove(lendingPool, debtPaid);
+        HoloFiLendingPool(lendingPool).returnLiquidity(address(this), debtPaid);
+
+        // Step 3: Transfer penalty surcharge directly into LendingPool contract
+        if (penaltyPaid > 0) {
+            asset.safeTransfer(lendingPool, penaltyPaid);
         }
 
-        // 3. Complete liquidation and transfer NFTs to liquidator
+        // Step 4: Refund residual equity surplus to original store (Vault Owner)
+        if (surplus > 0) {
+            asset.safeTransfer(auction.seller, surplus);
+        }
+
+        // Step 5: Finalize liquidation status, unlock & transfer collateral NFTs to liquidator
         loanCore.finalizeLiquidation(vaultId, msg.sender);
 
-        emit AuctionSettled(vaultId, msg.sender, lendingPool, currentPrice, debtPaid, surplus);
+        emit AuctionSettled(vaultId, msg.sender, lendingPool, currentPrice, debtPaid, penaltyPaid, surplus);
     }
 
     function getAuction(uint256 vaultId) external view returns (Auction memory) {
