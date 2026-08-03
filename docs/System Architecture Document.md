@@ -282,49 +282,39 @@ $$\text{Asset}_{\text{available}} = \text{Balance}_{\text{Asset}}$$
 
 Activated when a store vault's Health Factor ($HF$) falls below 1.0:
 
+$$HF = \frac{\text{Vault FMV} \times \text{liquidationThresholdBps}}{\text{Total Debt} \times 10000} < 1.0$$
 
-$$HF = \frac{\text{payload.totalFmv} \times \text{liquidationThresholdBps}}{\text{principalDebt} + \text{accumulatedInterest}} < 1.0$$
+#### A. Dutch Auction Initiation & Parameters (`startAuction`)
 
-#### A. Dutch Auction Parameters
+1. **State Locking**: Calling `startAuction(vaultId)` verifies $HF < 1.0$, triggers `loanCore.startLiquidation(vaultId)`, and updates the target vault to `Liquidating` status. The store cannot borrow, repay, or withdraw assets while liquidating.
 
-1. **State Locking**: The target vault enters `Liquidating` status. Associated NFTs are transferred to `HoloFiDutchAuction`. The store cannot borrow, repay, or withdraw assets.
+2. **Linear Price Decay Function (`getAuctionPrice`)**:
+* **Start Price ($P_{\text{start}}$)**: $\text{Vault FMV} \times \frac{12000}{10000}$ (120.00% of Vault FMV)
+* **Reserve Price ($P_{\text{reserve}}$)**: Total Debt ($\text{principalDebt} + \text{accumulatedInterest}$)
+* **Default Auction Duration ($T_{\text{auction}}$)**: 48 hours.
 
+$$\text{CurrentPrice}(t) = P_{\text{start}} - \left( (P_{\text{start}} - P_{\text{reserve}}) \times \frac{t - t_{\text{start}}}{48\text{ hours}} \right)$$
 
-2. **Price Decay Function**:
-* **Start Price ($P_{\text{start}}$)**: $\text{payload.totalFmv} \times 120\%$
-* **Reserve Price ($P_{\text{reserve}}$)**: $\text{TotalDebt} + \text{LiquidationFee}$
-* **Auction Duration ($T_{\text{auction}}$)**: 48 to 72 hours.
+#### B. Auction Settlement & Fund Distribution (`settleAuction`)
 
-
-$$\text{CurrentPrice}(t) = P_{\text{start}} - \left( (P_{\text{start}} - P_{\text{reserve}}) \times \frac{t - t_{\text{start}}}{T_{\text{auction}}} \right)$$
-
-
-
-#### B. Auction Settlement (`bidAuction`)
-
-When a liquidator calls `bidAuction(vaultId)` paying $\text{CurrentPrice}(t)$ in USDC:
+When a liquidator calls `settleAuction(vaultId, lendingPool)` paying $\text{CurrentPrice}(t)$ in underlying asset tokens:
 
 ```text
 Liquidator Buyer
     │
-    │ 1. Pays CurrentPrice(t) in USDC
+    │ 1. Pays CurrentPrice(t) in ERC-20 Asset
     ▼
 HoloFiDutchAuction Contract
     │
-    ├───► 2. Transfer Debt Amount ──────────────► HoloFiLendingPool (Generic ERC-4626)
-    │                                             (Full Principal + Interest Clearance)
+    ├───► 2. Transfer Debt Amount (returnLiquidity) ──► HoloFiLendingPool (Generic ERC-4626)
+    │                                                   (Full Principal + Interest Clearance)
     │
-    ├───► 3. Transfer Liquidation Fee ─────────► Protocol Fee Receiver
+    ├───► 3. Transfer Surplus (If any) ───────────────► Original Store (Vault Owner)
     │
-    ├───► 4. Transfer Surplus (If any) ────────► Original Store (Vault Owner)
-    │
-    └───► 5. On-Chain Transfer NFTs ───────────► Liquidator Address
-                                                  │
-                                                  └─► Emit Event AuctionSettled
-                                                       │
-                                                       ▼
-                                                 Blink System (Sync Physical Ownership)
-
+    └───► 4. finalizeLiquidation ─────────────────────► HoloFiVaultLoanCore
+                                                        │
+                                                        └─► Unlock & Transfer NFTs ──► Liquidator Address
+                                                             (Emit AuctionSettled & VaultLiquidated)
 ```
 
 ---
