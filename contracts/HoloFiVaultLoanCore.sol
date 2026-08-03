@@ -426,6 +426,29 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         );
     }
 
+    function startLiquidation(uint256 vaultId) external {
+        if (msg.sender != dutchAuction) {
+            revert UnauthorizedAuction(msg.sender);
+        }
+        CollateralVault storage vault = vaults[vaultId];
+        if (vault.status != VaultStatus.Active) {
+            revert VaultNotActive(vaultId);
+        }
+
+        accrueInterest(vaultId);
+
+        uint256 fmv = getVaultFMV(vaultId);
+        uint256 totalDebt = getTotalDebt(vaultId);
+        uint256 hf = calculateHealthFactor(fmv, totalDebt);
+
+        if (hf >= HEALTH_FACTOR_PRECISION) {
+            revert VaultNotEligibleForLiquidation(vaultId, hf);
+        }
+
+        vault.status = VaultStatus.Liquidating;
+        emit VaultLiquidationStarted(vaultId);
+    }
+
     function getVault(uint256 vaultId) external view returns (CollateralVault memory) {
         return vaults[vaultId];
     }

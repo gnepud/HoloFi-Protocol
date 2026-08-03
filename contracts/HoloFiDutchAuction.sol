@@ -17,6 +17,8 @@ contract HoloFiDutchAuction {
         bool isSettled;
     }
 
+    uint256 public constant BPS_DENOMINATOR = 10000;
+    uint256 public constant START_PRICE_BPS = 12000; // 120.00%
     uint256 public constant DEFAULT_AUCTION_DURATION = 48 hours;
 
     AccessControlManager public immutable acm;
@@ -57,5 +59,57 @@ contract HoloFiDutchAuction {
         acm = AccessControlManager(_acm);
         loanCore = HoloFiVaultLoanCore(_loanCore);
         poolFactory = HoloFiLendingPoolFactory(_poolFactory);
+    }
+
+    function startAuction(uint256 vaultId) external {
+        Auction storage auction = auctions[vaultId];
+        if (auction.startTime != 0 && !auction.isSettled) {
+            revert AuctionAlreadyStarted(vaultId);
+        }
+
+        loanCore.startLiquidation(vaultId);
+
+        uint256 startFmv = loanCore.getVaultFMV(vaultId);
+        uint256 totalDebt = loanCore.getTotalDebt(vaultId);
+
+        uint256 startPrice = (startFmv * START_PRICE_BPS) / BPS_DENOMINATOR;
+        uint256 reservePrice = totalDebt;
+        if (startPrice < reservePrice) {
+            startPrice = reservePrice;
+        }
+
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
+
+        auctions[vaultId] = Auction({
+            vaultId: vaultId,
+            startFmv: startFmv,
+            startPrice: startPrice,
+            reservePrice: reservePrice,
+            startTime: block.timestamp,
+            duration: DEFAULT_AUCTION_DURATION,
+            seller: vault.owner,
+            isSettled: false
+        });
+
+        emit AuctionStarted(vaultId, startPrice, reservePrice, block.timestamp, DEFAULT_AUCTION_DURATION);
+    }
+
+    function getAuctionPrice(uint256 vaultId) public view returns (uint256) {
+        Auction memory auction = auctions[vaultId];
+        if (auction.startTime == 0 || auction.isSettled) {
+            return 0;
+        }
+
+        uint256 elapsed = block.timestamp - auction.startTime;
+        if (elapsed >= auction.duration) {
+            return auction.reservePrice;
+        }
+
+        uint256 priceDrop = ((auction.startPrice - auction.reservePrice) * elapsed) / auction.duration;
+        return auction.startPrice - priceDrop;
+    }
+
+    function getAuction(uint256 vaultId) external view returns (Auction memory) {
+        return auctions[vaultId];
     }
 }
