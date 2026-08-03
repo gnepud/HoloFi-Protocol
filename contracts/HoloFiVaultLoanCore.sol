@@ -32,6 +32,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     mapping(uint256 => uint256) public nftVaultId;
     mapping(uint256 => uint256) public cardFmv;
     uint256 public nextVaultId = 1;
+    address public dutchAuction;
 
     uint256 public constant BPS_DENOMINATOR = 10000;
     uint256 public constant SECONDS_PER_YEAR = 365 days;
@@ -75,6 +76,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         uint256 remainingPrincipalDebt,
         uint256 remainingAccumulatedInterest
     );
+    event DutchAuctionUpdated(address indexed newAuction);
+    event VaultLiquidationStarted(uint256 indexed vaultId);
+    event VaultLiquidated(uint256 indexed vaultId, address indexed liquidator);
 
     error ZeroAddressACM();
     error ZeroAddressNFT();
@@ -96,6 +100,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error ZeroRepayAmount();
     error NoActiveDebt(uint256 vaultId);
     error InsufficientCollateralRatio(uint256 vaultId, uint256 totalDebt, uint256 remainingMaxBorrow);
+    error UnauthorizedAuction(address caller);
+    error VaultNotEligibleForLiquidation(uint256 vaultId, uint256 healthFactor);
+    error VaultNotLiquidating(uint256 vaultId);
 
     constructor(address _acm, address _nftCollection, address _poolFactory) {
         if (_acm == address(0)) {
@@ -110,6 +117,14 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         acm = AccessControlManager(_acm);
         nftCollection = HoloFiCardCollection(_nftCollection);
         poolFactory = HoloFiLendingPoolFactory(_poolFactory);
+    }
+
+    function setDutchAuction(address _dutchAuction) external {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedAdmin(msg.sender);
+        }
+        dutchAuction = _dutchAuction;
+        emit DutchAuctionUpdated(_dutchAuction);
     }
 
     function setRiskParameters(
