@@ -4,6 +4,8 @@ pragma solidity ^0.8.28;
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
 import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
+import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract HoloFiDutchAuction {
     struct Auction {
@@ -107,6 +109,36 @@ contract HoloFiDutchAuction {
 
         uint256 priceDrop = ((auction.startPrice - auction.reservePrice) * elapsed) / auction.duration;
         return auction.startPrice - priceDrop;
+    }
+
+    function settleAuction(uint256 vaultId, address lendingPool) external {
+        Auction storage auction = auctions[vaultId];
+        if (auction.startTime == 0 || auction.isSettled) {
+            revert AuctionNotActive(vaultId);
+        }
+        if (!poolFactory.isValidPool(lendingPool)) {
+            revert UnregisteredLendingPool(lendingPool);
+        }
+
+        uint256 currentPrice = getAuctionPrice(vaultId);
+        uint256 debtPaid = auction.reservePrice;
+        uint256 surplus = currentPrice > debtPaid ? currentPrice - debtPaid : 0;
+
+        auction.isSettled = true;
+
+        // 1. Pay off pool debt
+        HoloFiLendingPool(lendingPool).returnLiquidity(msg.sender, debtPaid);
+
+        // 2. Transfer surplus to original store
+        if (surplus > 0) {
+            IERC20 asset = IERC20(HoloFiLendingPool(lendingPool).asset());
+            asset.transferFrom(msg.sender, auction.seller, surplus);
+        }
+
+        // 3. Complete liquidation and transfer NFTs to liquidator
+        loanCore.finalizeLiquidation(vaultId, msg.sender);
+
+        emit AuctionSettled(vaultId, msg.sender, lendingPool, currentPrice, debtPaid, surplus);
     }
 
     function getAuction(uint256 vaultId) external view returns (Auction memory) {

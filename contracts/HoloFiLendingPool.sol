@@ -4,6 +4,10 @@ pragma solidity ^0.8.28;
 import { ERC4626, ERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 
+interface IHoloFiVaultLoanCore {
+    function dutchAuction() external view returns (address);
+}
+
 /**
  * @title HoloFiLendingPool
  * @notice Generic permissioned ERC-4626 liquidity pool issuing custom pToken share tokens against ERC-20 deposits.
@@ -65,7 +69,8 @@ contract HoloFiLendingPool is ERC4626 {
     }
 
     function returnLiquidity(address payer, uint256 amount) external {
-        if (msg.sender != loanCore && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+        address auction = (loanCore != address(0) && loanCore.code.length > 0) ? IHoloFiVaultLoanCore(loanCore).dutchAuction() : address(0);
+        if (msg.sender != loanCore && msg.sender != auction && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedLoanCore(msg.sender);
         }
 

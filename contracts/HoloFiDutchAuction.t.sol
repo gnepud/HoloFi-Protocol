@@ -207,4 +207,144 @@ contract HoloFiDutchAuctionTest is Test {
         vm.warp(block.timestamp + 12 hours);
         assertEq(dutchAuction.getAuctionPrice(vaultId), 4_000 * 1e6);
     }
+
+    function test_SettleAuction_WithSurplus() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        // Borrow $4,000 (total FMV = $10,000)
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        // Drop FMV to $5,000 -> HF = 3,500 / 4,000 = 0.875 < 1.0
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+
+        dutchAuction.startAuction(vaultId);
+
+        // StartPrice = $6,000, ReservePrice = $4,000. Time warp 24h -> CurrentPrice = $5,000 (debt = $4,000, surplus = $1,000)
+        vm.warp(block.timestamp + 24 hours);
+
+        address liquidator = address(0x8888);
+        asset.mint(liquidator, 6_000 * 1e6);
+
+        vm.startPrank(liquidator);
+        asset.approve(address(pool), 4_000 * 1e6);
+        asset.approve(address(dutchAuction), 1_000 * 1e6);
+
+        dutchAuction.settleAuction(vaultId, address(pool));
+        vm.stopPrank();
+
+        // Verifications
+        assertEq(asset.balanceOf(store), 5_000 * 1e6); // Store borrowed $4,000 + receives $1,000 surplus = $5,000
+        assertEq(cardCollection.ownerOf(cardId1), liquidator); // Liquidator receives card NFT
+        assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Liquidated));
+        assertEq(loanCore.getVault(vaultId).principalDebt, 0);
+    }
+
+    function test_SettleAuction_AtReservePrice() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+
+        dutchAuction.startAuction(vaultId);
+
+        // Time warp 48h -> CurrentPrice = ReservePrice = $4,000 (surplus = 0)
+        vm.warp(block.timestamp + 48 hours);
+
+        address liquidator = address(0x8888);
+        asset.mint(liquidator, 4_000 * 1e6);
+
+        vm.startPrank(liquidator);
+        asset.approve(address(pool), 4_000 * 1e6);
+
+        dutchAuction.settleAuction(vaultId, address(pool));
+        vm.stopPrank();
+
+        assertEq(asset.balanceOf(store), 4_000 * 1e6);
+        assertEq(cardCollection.ownerOf(cardId1), liquidator);
+    }
+
+    function test_RevertIf_SettleAuction_UnregisteredPool() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+
+        dutchAuction.startAuction(vaultId);
+
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiDutchAuction.UnregisteredLendingPool.selector, unauthorized));
+        dutchAuction.settleAuction(vaultId, unauthorized);
+    }
 }
+

@@ -12,7 +12,7 @@ import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
  * @notice Core credit manager and collateral escrow contract for HoloFi protocol.
  */
 contract HoloFiVaultLoanCore is IERC721Receiver {
-    enum VaultStatus { Active, Liquidating, Closed }
+    enum VaultStatus { Active, Liquidating, Closed, Liquidated }
 
     struct CollateralVault {
         uint256 vaultId;
@@ -447,6 +447,32 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
         vault.status = VaultStatus.Liquidating;
         emit VaultLiquidationStarted(vaultId);
+    }
+
+    function finalizeLiquidation(uint256 vaultId, address liquidator) external {
+        if (msg.sender != dutchAuction) {
+            revert UnauthorizedAuction(msg.sender);
+        }
+        CollateralVault storage vault = vaults[vaultId];
+        if (vault.status != VaultStatus.Liquidating) {
+            revert VaultNotLiquidating(vaultId);
+        }
+
+        vault.principalDebt = 0;
+        vault.accumulatedInterest = 0;
+        vault.status = VaultStatus.Liquidated;
+
+        uint256 len = vault.tokenIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            uint256 tokenId = vault.tokenIds[i];
+            nftVaultId[tokenId] = 0;
+            nftCollection.setCardLock(tokenId, false);
+            nftCollection.safeTransferFrom(address(this), liquidator, tokenId);
+        }
+
+        delete vault.tokenIds;
+
+        emit VaultLiquidated(vaultId, liquidator);
     }
 
     function getVault(uint256 vaultId) external view returns (CollateralVault memory) {
