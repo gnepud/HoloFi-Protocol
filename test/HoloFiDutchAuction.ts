@@ -83,12 +83,14 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     const auctionStartTime = auction.startTime;
 
     await asset.mint(liquidator.address, ethers.parseUnits("6000", 6));
-    await asset.connect(liquidator).approve(poolAddr, ethers.parseUnits("4000", 6));
-    await asset.connect(liquidator).approve(auctionAddr, ethers.parseUnits("1000", 6));
+    await asset.connect(liquidator).approve(auctionAddr, ethers.parseUnits("5200", 6));
 
     const initialStoreBalance = await asset.balanceOf(store.address);
 
-    // Time warp 24h -> CurrentPrice = $5,000 (debt = $4,000, surplus = $1,000)
+    // StartPrice = $6,000 (120% of $5,000)
+    // Debt = $4,000, Penalty (10%) = $400, ReservePrice = $4,400
+    // Time warp 24h -> CurrentPrice = $6,000 - (($6,000 - $4,400) * 24 / 48) = $5,200
+    // Surplus = $5,200 - $4,400 = $800
     await networkHelpers.time.setNextBlockTimestamp(auctionStartTime + 86400n);
 
     await expect(dutchAuction.connect(liquidator).settleAuction(1n, poolAddr))
@@ -97,17 +99,18 @@ describe("HoloFiDutchAuction Integration Tests", function () {
         1n,
         liquidator.address,
         poolAddr,
-        ethers.parseUnits("5000", 6),
+        ethers.parseUnits("5200", 6),
         ethers.parseUnits("4000", 6),
-        ethers.parseUnits("1000", 6)
+        ethers.parseUnits("400", 6),
+        ethers.parseUnits("800", 6)
       );
 
-    // Verify store received $1,000 surplus
+    // Verify store received $800 surplus refund
     const finalStoreBalance = await asset.balanceOf(store.address);
-    expect(finalStoreBalance - initialStoreBalance).to.equal(ethers.parseUnits("1000", 6));
+    expect(finalStoreBalance - initialStoreBalance).to.equal(ethers.parseUnits("800", 6));
 
-    // Verify pool asset balance restored
-    expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("100000", 6));
+    // Verify pool asset balance restored + penalty ($100,000 + $400 penalty = $100,400)
+    expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("100400", 6));
 
     // Verify liquidator owns card NFTs
     expect(await cardCollection.ownerOf(1n)).to.equal(liquidator.address);
