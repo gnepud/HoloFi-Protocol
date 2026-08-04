@@ -1,27 +1,22 @@
-# Hardhat + ethers project
+# HoloFi Protocol Agent Directives
 
-## Project layout
+## General Development Rules
+- Remove obsolete paths. Ship only current code.
+- Use simplest code that meets needs now.
+- Build in layers. Ship smallest working version first. Add on top of working product.
+- Keep modules separate with clear concerns.
+- Prefer mature libraries that simplify or stabilize.
+- Check existing deps, docs, and types first.
+- Design for the long term.
+- Study proven products. Adopt their patterns.
 
-```
-contracts/        Solidity source files (*.sol) and unit tests (*.t.sol)
-test/             TypeScript integration tests and Solidity unit tests (*.sol)
-ignition/         Hardhat Ignition deployment modules
-scripts/          Standalone scripts run with `hardhat run`
-hardhat.config.ts
-```
+## Verification Workflow
+- Before completing any task, always run full compilation, typecheck, and test suite:
+  ```bash
+  npx hardhat build && npx tsc --noEmit && npx hardhat test
+  ```
 
-## Working in this project
-
-When writing or modifying tests, configuring `hardhat.config.ts`, or interacting with the network from TypeScript, invoke the **`hardhat`** skill. It covers Solidity and TypeScript testing, how to choose between them, `forge-std` cheatcodes, the `network.create()` API, `networkHelpers`, and the compile-then-typecheck workflow. The skill itself points to the matching `hardhat-toolbox-*` skill for toolbox-specific guidance (signers, contract interaction, assertions).
-
-If the commit relates to any Linear issue → Must use [Magic Word] [TEAM-123] in the commit message.
-The closing magic words are: close, closes, closed, closing, fix, fixes, fixed, fixing, resolve, resolves, resolved, resolving, complete, completes, completed, completing, implement, implements, implemented, implementing, linear issue.
-The non-closing magic words are: ref, refs, references, part of, related to, relates to, contributes to, toward, towards.
-To prevent a specific issue from being linked automatically, use skip or ignore with that issue ID. For example: Ignore ENG-123.
-Always use the exact team key (e.g. HF-10, case-sensitive).
-Multiple issues supported: Fixes HF-10, HF-15
-
-## Docs
-
-- Hardhat 3 — https://hardhat.org/llms.txt
-- ethers.js — https://docs.ethers.org/v6/
+## Linear Integration & Commit Conventions
+- If the commit relates to any Linear issue → Must use `[Magic Word] [TEAM-123]` in the commit message:
+  - **Closing magic words** (for final task commits): `fix`, `fixes`, `fixed`, `close`, `closes`, `closed`, `resolve`, `resolves`, `resolved`, `complete`, `completes`, `completed`.
+  - **Non-closing magic words** (for specs/plans/intermediate commits): `ref`, `refs`, `relates to`, `related to`, `part of`, `toward`, `towards`.
