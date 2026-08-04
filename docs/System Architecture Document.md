@@ -7,7 +7,7 @@
 1. **Physical Logistics & Vaulting**: 100% delegated to certified partner **Blink**, which handles physical card reception, grading authentication, secure vaulting, and physical delivery upon redemption.
 
 
-2. **On-Chain Register & Credit Engine**: Powered by smart contracts on EVM-compatible blockchains. HoloFi manages a single, permissioned NFT collection (`HoloFiCardCollection`), store-isolated collateral vaults (`CollateralVault`), a shared liquidity pool (`ERC-4626`), an oracle valuation pipeline (`Chainlink CRE` + `FMV Engine`), and a Dutch Auction liquidation mechanism.
+2. **On-Chain Register & Credit Engine**: Powered by smart contracts on EVM-compatible blockchains. HoloFi manages a single, permissioned NFT collection (`HoloFiVaultCard`), store-isolated collateral vaults (`CollateralVault`), a shared liquidity pool (`ERC-4626`), an oracle valuation pipeline (`Chainlink CRE` + `FMV Engine`), and a Dutch Auction liquidation mechanism.
 
 
 
@@ -36,7 +36,7 @@
 │               │                                  │                                   │                 │
 │               ▼                                  ▼                                   ▼                 │
 │  ┌────────────────────────┐         ┌─────────────────────────┐         ┌──────────────────────────┐   │
-│  │  HoloFiCardCollection  │         │   HoloFiVaultLoanCore   │         │  HoloFiLendingPool       │   │
+│  │     HoloFiVaultCard    │         │   HoloFiVaultLoanCore   │         │  HoloFiLendingPool       │   │
 │  │ (Single Global Coll.)  │◄───────►│   (Collateral Vaults)   │◄───────►│ (Generic ERC-4626 Pool)  │   │
 │  └────────────────────────┘         └────────────┬────────────┘         └────────────▲─────────────┘   │
 │                                                  │                                   │ Deploys Pools   │
@@ -54,7 +54,7 @@
 
 ## 3. Detailed Technical Module Specifications
 
-### 3.1. Unified Ownership Registry: `HoloFiCardCollection`
+### 3.1. Unified Ownership Registry: `HoloFiVaultCard`
 
 All vaulted TCG cards across all stores are minted within a **single, unified ERC-721 Collection** (`HoloFi Vaulted TCG Collection`).
 
@@ -156,7 +156,7 @@ struct CollateralVault {
 }
 
 AccessControlManager public immutable acm;
-HoloFiCardCollection public immutable nftCollection;
+HoloFiVaultCard public immutable nftCollection;
 HoloFiLendingPoolFactory public immutable poolFactory;
 
 mapping(uint256 => CollateralVault) public vaults;

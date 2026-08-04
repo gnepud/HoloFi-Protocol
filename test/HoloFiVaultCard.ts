@@ -3,14 +3,14 @@ import { network } from "hardhat";
 
 const { ethers, networkHelpers } = await network.create();
 
-describe("HoloFiCardCollection Integration Tests", function () {
+describe("HoloFiVaultCard Integration Tests", function () {
   async function deployCardCollectionFixture() {
     const [owner, admin, minter, user, unauthorized] = await ethers.getSigners();
     const acm = await ethers.deployContract("AccessControlManager", [admin.address]);
     const minterRole = await acm.MINTER_ROLE();
     await acm.connect(admin).grantRole(minterRole, minter.address);
 
-    const cardCollection = await ethers.deployContract("HoloFiCardCollection", [
+    const cardCollection = await ethers.deployContract("HoloFiVaultCard", [
       "HoloFi TCG Cards",
       "HFC",
       await acm.getAddress(),

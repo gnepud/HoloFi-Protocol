@@ -7,7 +7,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
   async function deployDutchAuctionFixture() {
     const [owner, admin, minter, store, liquidator, unauthorized] = await ethers.getSigners();
     const acm = await ethers.deployContract("AccessControlManager", [admin.address]);
-    const cardCollection = await ethers.deployContract("HoloFiCardCollection", [
+    const cardCollection = await ethers.deployContract("HoloFiVaultCard", [
       "HoloFi TCG Cards",
       "HFC",
       await acm.getAddress(),
