@@ -25,7 +25,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     }
 
     AccessControlManager public immutable acm;
-    HoloFiVaultCard public immutable nftCollection;
+    HoloFiVaultCard public immutable vaultCard;
     HoloFiLendingPoolFactory public immutable poolFactory;
 
     mapping(uint256 => CollateralVault) public vaults;
@@ -81,7 +81,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     event VaultLiquidated(uint256 indexed vaultId, address indexed liquidator);
 
     error ZeroAddressACM();
-    error ZeroAddressNFT();
+    error ZeroAddressVaultCard();
     error ZeroAddressPoolFactory();
     error UnregisteredLendingPool(address pool);
     error KybRequired(address caller);
@@ -104,18 +104,18 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error VaultNotEligibleForLiquidation(uint256 vaultId, uint256 healthFactor);
     error VaultNotLiquidating(uint256 vaultId);
 
-    constructor(address _acm, address _nftCollection, address _poolFactory) {
+    constructor(address _acm, address _vaultCard, address _poolFactory) {
         if (_acm == address(0)) {
             revert ZeroAddressACM();
         }
-        if (_nftCollection == address(0)) {
-            revert ZeroAddressNFT();
+        if (_vaultCard == address(0)) {
+            revert ZeroAddressVaultCard();
         }
         if (_poolFactory == address(0)) {
             revert ZeroAddressPoolFactory();
         }
         acm = AccessControlManager(_acm);
-        nftCollection = HoloFiVaultCard(_nftCollection);
+        vaultCard = HoloFiVaultCard(_vaultCard);
         poolFactory = HoloFiLendingPoolFactory(_poolFactory);
     }
 
@@ -237,8 +237,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
                 revert TokenAlreadyInVault(tokenId, existingVault);
             }
 
-            nftCollection.safeTransferFrom(msg.sender, address(this), tokenId);
-            nftCollection.setCardLock(tokenId, true);
+            vaultCard.safeTransferFrom(msg.sender, address(this), tokenId);
+            vaultCard.setCardLock(tokenId, true);
 
             vault.tokenIds.push(tokenId);
             nftVaultId[tokenId] = vaultId;
@@ -291,8 +291,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
             _removeTokenFromVault(vault, tokenId);
             nftVaultId[tokenId] = 0;
-            nftCollection.setCardLock(tokenId, false);
-            nftCollection.safeTransferFrom(address(this), vault.owner, tokenId);
+            vaultCard.setCardLock(tokenId, false);
+            vaultCard.safeTransferFrom(address(this), vault.owner, tokenId);
         }
 
         emit CollateralWithdrawn(vaultId, vault.owner, tokenIds);
@@ -466,8 +466,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         for (uint256 i = 0; i < len; i++) {
             uint256 tokenId = vault.tokenIds[i];
             nftVaultId[tokenId] = 0;
-            nftCollection.setCardLock(tokenId, false);
-            nftCollection.safeTransferFrom(address(this), liquidator, tokenId);
+            vaultCard.setCardLock(tokenId, false);
+            vaultCard.safeTransferFrom(address(this), liquidator, tokenId);
         }
 
         delete vault.tokenIds;

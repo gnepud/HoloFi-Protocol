@@ -29,7 +29,7 @@ contract MockDutchAuction is HoloFiDutchAuction {
 
 contract HoloFiDutchAuctionTest is Test {
     AccessControlManager public acm;
-    HoloFiVaultCard public cardCollection;
+    HoloFiVaultCard public vaultCard;
     HoloFiLendingPoolFactory public poolFactory;
     HoloFiVaultLoanCore public loanCore;
     HoloFiDutchAuction public dutchAuction;
@@ -45,9 +45,9 @@ contract HoloFiDutchAuctionTest is Test {
 
     function setUp() public {
         acm = new AccessControlManager(admin);
-        cardCollection = new HoloFiVaultCard("HoloFi TCG Cards", "HFC", address(acm));
+        vaultCard = new HoloFiVaultCard("HoloFi TCG Cards", "HFC", address(acm));
         poolFactory = new HoloFiLendingPoolFactory(address(acm));
-        loanCore = new HoloFiVaultLoanCore(address(acm), address(cardCollection), address(poolFactory));
+        loanCore = new HoloFiVaultLoanCore(address(acm), address(vaultCard), address(poolFactory));
         dutchAuction = new HoloFiDutchAuction(address(acm), address(loanCore), address(poolFactory));
 
         vm.startPrank(admin);
@@ -61,8 +61,8 @@ contract HoloFiDutchAuctionTest is Test {
         bytes32 attestationHash1 = keccak256("raw_data_1");
         bytes32 attestationHash2 = keccak256("raw_data_2");
         vm.startPrank(minter);
-        cardId1 = cardCollection.mintCard(store, attestationHash1, "ipfs://card1");
-        cardId2 = cardCollection.mintCard(store, attestationHash2, "ipfs://card2");
+        cardId1 = vaultCard.mintCard(store, attestationHash1, "ipfs://card1");
+        cardId2 = vaultCard.mintCard(store, attestationHash2, "ipfs://card2");
         vm.stopPrank();
     }
 
@@ -101,7 +101,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -145,7 +145,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -186,7 +186,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -224,7 +224,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -272,7 +272,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -316,7 +316,7 @@ contract HoloFiDutchAuctionTest is Test {
         // Verifications
         assertEq(asset.balanceOf(store), 4_800 * 1e6); // Store borrowed $4,000 + receives $800 surplus = $4,800
         assertEq(asset.balanceOf(address(pool)), 100_400 * 1e6); // Pool 100,000 + 400 penalty
-        assertEq(cardCollection.ownerOf(cardId1), liquidator); // Liquidator receives card NFT
+        assertEq(vaultCard.ownerOf(cardId1), liquidator); // Liquidator receives card NFT
         assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Closed));
         assertEq(loanCore.getVault(vaultId).principalDebt, 0);
     }
@@ -326,7 +326,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -372,7 +372,7 @@ contract HoloFiDutchAuctionTest is Test {
         // Assertions
         assertEq(asset.balanceOf(address(pool)), 100_400 * 1e6); // $100,000 principal + $400 penalty
         assertEq(asset.balanceOf(store), 4_800 * 1e6); // Store receives $800 surplus refund (4,000 borrowed + 800)
-        assertEq(cardCollection.ownerOf(cardId1), liquidator);
+        assertEq(vaultCard.ownerOf(cardId1), liquidator);
         assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Closed));
     }
 
@@ -381,7 +381,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -422,7 +422,7 @@ contract HoloFiDutchAuctionTest is Test {
 
         assertEq(asset.balanceOf(store), 4_000 * 1e6);
         assertEq(asset.balanceOf(address(pool)), 100_400 * 1e6);
-        assertEq(cardCollection.ownerOf(cardId1), liquidator);
+        assertEq(vaultCard.ownerOf(cardId1), liquidator);
     }
 
     function test_RevertIf_SettleAuction_InsufficientAuctionPrice() public {
@@ -434,7 +434,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -480,7 +480,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -550,7 +550,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -601,7 +601,7 @@ contract HoloFiDutchAuctionTest is Test {
         uint256 vaultId = loanCore.createVault();
 
         vm.prank(store);
-        cardCollection.setApprovalForAll(address(loanCore), true);
+        vaultCard.setApprovalForAll(address(loanCore), true);
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = cardId1;
@@ -641,7 +641,7 @@ contract HoloFiDutchAuctionTest is Test {
 
         // Assertions
         assertEq(asset.balanceOf(address(pool)), 100_000 * 1e6); // Exact $4,000 debt restored
-        assertEq(cardCollection.ownerOf(cardId1), treasury); // Card NFT assigned to treasury
+        assertEq(vaultCard.ownerOf(cardId1), treasury); // Card NFT assigned to treasury
         assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Closed));
         assertEq(loanCore.getVault(vaultId).principalDebt, 0);
     }
