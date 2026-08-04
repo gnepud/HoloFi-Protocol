@@ -122,7 +122,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     expect(card2Info.isLocked).to.be.false;
 
     const vaultInfo = await loanCore.getVault(1n);
-    expect(vaultInfo.status).to.equal(3n); // VaultStatus.Liquidated
+    expect(vaultInfo.status).to.equal(2n); // VaultStatus.Closed
     expect(vaultInfo.principalDebt).to.equal(0n);
   });
 
@@ -187,7 +187,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     expect(await cardCollection.ownerOf(2n)).to.equal(treasury.address);
 
     const vaultInfo = await loanCore.getVault(1n);
-    expect(vaultInfo.status).to.equal(3n); // VaultStatus.Liquidated
+    expect(vaultInfo.status).to.equal(2n); // VaultStatus.Closed
     expect(vaultInfo.principalDebt).to.equal(0n);
   });
 
