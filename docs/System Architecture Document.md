@@ -317,6 +317,14 @@ HoloFiDutchAuction Contract
                                                              (Emit AuctionSettled & VaultLiquidated)
 ```
 
+#### C. Protocol Treasury Buyback (`treasuryBuyback`)
+
+For auctions that expire after the 48-hour duration without receiving public bids, the authorized Protocol Treasury wallet (`treasury`) can execute a backstop buyback:
+
+1. **Role & Expiration Validation**: Enforces `msg.sender == treasury` (`UnauthorizedTreasury`) and `block.timestamp >= auction.startTime + 48 hours` (`AuctionNotExpired`).
+2. **Debt-Only Settlement**: The Treasury pays exactly 100% of the loan debt (`debtAmount`) into `HoloFiLendingPool` via `returnLiquidity(address(this), debtAmount)`. The 10% penalty fee is waived for Treasury to maximize capital efficiency.
+3. **Physical Collateral Assignment**: Calls `loanCore.finalizeLiquidation(vaultId, msg.sender)` to assign the physical card NFT(s) directly to the Protocol Treasury wallet for off-chain liquidation.
+
 ---
 
 ## 4. Sequence Diagrams
