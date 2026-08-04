@@ -125,4 +125,71 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     expect(vaultInfo.status).to.equal(3n); // VaultStatus.Liquidated
     expect(vaultInfo.principalDebt).to.equal(0n);
   });
+
+  it("Should allow treasury to execute buyback for expired unsold auction, restoring pool principal and assigning card NFTs", async function () {
+    const { loanCore, cardCollection, dutchAuction, poolFactory, acm, admin, store, minter, liquidator, unauthorized } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
+
+    const [,,,,,, treasury] = await ethers.getSigners();
+    await dutchAuction.connect(admin).setTreasury(treasury.address);
+    expect(await dutchAuction.treasury()).to.equal(treasury.address);
+
+    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
+    const poolAddr = await poolFactory.getPool(await asset.getAddress());
+    const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
+
+    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
+    await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
+
+    await loanCore.connect(store).createVault();
+    await cardCollection.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
+
+    await loanCore.connect(minter).setBatchCardFmv(
+      [1n, 2n],
+      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+    );
+
+    await loanCore.connect(admin).setRiskParameters(5000n, 7000n, 1000n, 0n);
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
+
+    // Drop FMV so HF < 1.0
+    await loanCore.connect(minter).setBatchCardFmv(
+      [1n, 2n],
+      [ethers.parseUnits("1000", 6), ethers.parseUnits("4000", 6)]
+    );
+
+    const auctionAddr = await dutchAuction.getAddress();
+    await dutchAuction.connect(liquidator).startAuction(1n);
+
+    // Attempt premature buyback before 48h expiration -> revert AuctionNotExpired
+    await expect(dutchAuction.connect(treasury).treasuryBuyback(1n, poolAddr))
+      .to.be.revertedWithCustomError(dutchAuction, "AuctionNotExpired");
+
+    // Attempt buyback by unauthorized caller -> revert UnauthorizedTreasury
+    await networkHelpers.time.increase(49 * 3600);
+    await expect(dutchAuction.connect(unauthorized).treasuryBuyback(1n, poolAddr))
+      .to.be.revertedWithCustomError(dutchAuction, "UnauthorizedTreasury");
+
+    // Treasury executes buyback
+    await asset.mint(treasury.address, ethers.parseUnits("4000", 6));
+    await asset.connect(treasury).approve(auctionAddr, ethers.parseUnits("4000", 6));
+
+    await expect(dutchAuction.connect(treasury).treasuryBuyback(1n, poolAddr))
+      .to.emit(dutchAuction, "TreasuryBuybackExecuted")
+      .withArgs(1n, treasury.address, poolAddr, ethers.parseUnits("4000", 6));
+
+    // Verify lending pool balance is restored to 100,000 EURC (no penalty added)
+    expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("100000", 6));
+
+    // Verify treasury owns card NFTs
+    expect(await cardCollection.ownerOf(1n)).to.equal(treasury.address);
+    expect(await cardCollection.ownerOf(2n)).to.equal(treasury.address);
+
+    const vaultInfo = await loanCore.getVault(1n);
+    expect(vaultInfo.status).to.equal(3n); // VaultStatus.Liquidated
+    expect(vaultInfo.principalDebt).to.equal(0n);
+  });
+
 });
+
