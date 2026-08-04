@@ -7,7 +7,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
   async function deployDutchAuctionFixture() {
     const [owner, admin, minter, store, liquidator, unauthorized] = await ethers.getSigners();
     const acm = await ethers.deployContract("AccessControlManager", [admin.address]);
-    const cardCollection = await ethers.deployContract("HoloFiVaultCard", [
+    const vaultCard = await ethers.deployContract("HoloFiVaultCard", [
       "HoloFi TCG Cards",
       "HFC",
       await acm.getAddress(),
@@ -15,7 +15,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     const poolFactory = await ethers.deployContract("HoloFiLendingPoolFactory", [await acm.getAddress()]);
     const loanCore = await ethers.deployContract("HoloFiVaultLoanCore", [
       await acm.getAddress(),
-      await cardCollection.getAddress(),
+      await vaultCard.getAddress(),
       await poolFactory.getAddress(),
     ]);
     const dutchAuction = await ethers.deployContract("HoloFiDutchAuction", [
@@ -38,14 +38,14 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     const attestationHash1 = ethers.keccak256(ethers.toUtf8Bytes("attestation_card_1"));
     const attestationHash2 = ethers.keccak256(ethers.toUtf8Bytes("attestation_card_2"));
 
-    await cardCollection.connect(minter).mintCard(store.address, attestationHash1, "ipfs://card1");
-    await cardCollection.connect(minter).mintCard(store.address, attestationHash2, "ipfs://card2");
+    await vaultCard.connect(minter).mintCard(store.address, attestationHash1, "ipfs://card1");
+    await vaultCard.connect(minter).mintCard(store.address, attestationHash2, "ipfs://card2");
 
-    return { acm, cardCollection, poolFactory, loanCore, dutchAuction, owner, admin, minter, store, liquidator, unauthorized };
+    return { acm, vaultCard, poolFactory, loanCore, dutchAuction, owner, admin, minter, store, liquidator, unauthorized };
   }
 
   it("Should execute end-to-end liquidation, paying off pool debt, refunding store surplus, and transferring card NFTs", async function () {
-    const { loanCore, cardCollection, dutchAuction, poolFactory, acm, admin, store, minter, liquidator } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
+    const { loanCore, vaultCard, dutchAuction, poolFactory, acm, admin, store, minter, liquidator } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
 
     const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
@@ -56,7 +56,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
 
     await loanCore.connect(store).createVault();
-    await cardCollection.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
     await loanCore.connect(minter).setBatchCardFmv(
@@ -113,11 +113,11 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("100400", 6));
 
     // Verify liquidator owns card NFTs
-    expect(await cardCollection.ownerOf(1n)).to.equal(liquidator.address);
-    expect(await cardCollection.ownerOf(2n)).to.equal(liquidator.address);
+    expect(await vaultCard.ownerOf(1n)).to.equal(liquidator.address);
+    expect(await vaultCard.ownerOf(2n)).to.equal(liquidator.address);
 
-    const card1Info = await cardCollection.getCard(1n);
-    const card2Info = await cardCollection.getCard(2n);
+    const card1Info = await vaultCard.getCard(1n);
+    const card2Info = await vaultCard.getCard(2n);
     expect(card1Info.isLocked).to.be.false;
     expect(card2Info.isLocked).to.be.false;
 
@@ -127,7 +127,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
   });
 
   it("Should allow treasury to execute buyback for expired unsold auction, restoring pool principal and assigning card NFTs", async function () {
-    const { loanCore, cardCollection, dutchAuction, poolFactory, acm, admin, store, minter, liquidator, unauthorized } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
+    const { loanCore, vaultCard, dutchAuction, poolFactory, acm, admin, store, minter, liquidator, unauthorized } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
 
     const [,,,,,, treasury] = await ethers.getSigners();
     await dutchAuction.connect(admin).setTreasury(treasury.address);
@@ -142,7 +142,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
 
     await loanCore.connect(store).createVault();
-    await cardCollection.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
     await loanCore.connect(minter).setBatchCardFmv(
@@ -183,8 +183,8 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("100000", 6));
 
     // Verify treasury owns card NFTs
-    expect(await cardCollection.ownerOf(1n)).to.equal(treasury.address);
-    expect(await cardCollection.ownerOf(2n)).to.equal(treasury.address);
+    expect(await vaultCard.ownerOf(1n)).to.equal(treasury.address);
+    expect(await vaultCard.ownerOf(2n)).to.equal(treasury.address);
 
     const vaultInfo = await loanCore.getVault(1n);
     expect(vaultInfo.status).to.equal(2n); // VaultStatus.Closed

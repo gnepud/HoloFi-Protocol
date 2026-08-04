@@ -156,7 +156,7 @@ struct CollateralVault {
 }
 
 AccessControlManager public immutable acm;
-HoloFiVaultCard public immutable nftCollection;
+HoloFiVaultCard public immutable vaultCard;
 HoloFiLendingPoolFactory public immutable poolFactory;
 
 mapping(uint256 => CollateralVault) public vaults;
@@ -176,7 +176,7 @@ uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
 
 * **Escrow Deposit (`depositCollateral`)**:
   - Stores can add card NFTs to their active vault at any time.
-  - Executes `nftCollection.safeTransferFrom(msg.sender, address(this), tokenId)` and locks cards via `nftCollection.setCardLock(tokenId, true)` to prevent secondary transfers.
+  - Executes `vaultCard.safeTransferFrom(msg.sender, address(this), tokenId)` and locks cards via `vaultCard.setCardLock(tokenId, true)` to prevent secondary transfers.
   - Registers `nftVaultId[tokenId] = vaultId` and pushes `tokenId` to `vault.tokenIds`.
 
 * **LTV-Guarded Escrow Withdrawal (`withdrawCollateral`)**:
@@ -185,7 +185,7 @@ uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
   - **Zero Debt vs Active Debt LTV Check**:
     - If total debt is 0 (`currentTotalDebt == 0`): Allows withdrawing any or all requested `tokenIds`.
     - If active debt exists (`currentTotalDebt > 0`): Computes remaining collateral value `remainingFmv` after removing `tokenIds`. Verifies `currentTotalDebt <= getMaxBorrowCapacity(remainingFmv)`. Reverts with `InsufficientCollateralRatio` if the remaining collateral breaches safety thresholds.
-  - Unlocks cards via `nftCollection.setCardLock(tokenId, false)` and returns NFTs via `nftCollection.safeTransferFrom(address(this), vault.owner, tokenId)`.
+  - Unlocks cards via `vaultCard.setCardLock(tokenId, false)` and returns NFTs via `vaultCard.safeTransferFrom(address(this), vault.owner, tokenId)`.
   - Clears `nftVaultId[tokenId]` and removes token from `vault.tokenIds`.
 
 #### C. Risk Engine & Accounting Mechanics
