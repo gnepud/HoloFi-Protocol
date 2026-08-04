@@ -5,10 +5,10 @@ import { ERC721URIStorage, ERC721 } from "@openzeppelin/contracts/token/ERC721/e
 import { AccessControlManager } from "./AccessControlManager.sol";
 
 /**
- * @title HoloFiCardCollection
- * @notice Permissioned ERC-721 collection representing physical TCG cards vaulted by Blink.
+ * @title HoloFiVaultCard
+ * @notice Permissioned ERC-721 token contract representing physical card assets vaulted by Blink.
  */
-contract HoloFiCardCollection is ERC721URIStorage {
+contract HoloFiVaultCard is ERC721URIStorage {
     struct CardMetadata {
         uint256 tokenId;
         bytes32 attestationHash;

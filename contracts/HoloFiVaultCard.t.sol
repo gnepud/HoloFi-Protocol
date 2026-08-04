@@ -3,11 +3,11 @@ pragma solidity ^0.8.28;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
-import { HoloFiCardCollection } from "./HoloFiCardCollection.sol";
+import { HoloFiVaultCard } from "./HoloFiVaultCard.sol";
 
-contract HoloFiCardCollectionTest is Test {
+contract HoloFiVaultCardTest is Test {
     AccessControlManager public acm;
-    HoloFiCardCollection public cardCollection;
+    HoloFiVaultCard public cardCollection;
 
     address public admin = address(0x1111);
     address public minter = address(0x2222);
@@ -22,7 +22,7 @@ contract HoloFiCardCollectionTest is Test {
         vm.prank(admin);
         acm.grantRole(minterRole, minter);
 
-        cardCollection = new HoloFiCardCollection("HoloFi TCG Cards", "HFC", address(acm));
+        cardCollection = new HoloFiVaultCard("HoloFi TCG Cards", "HFC", address(acm));
     }
 
     function test_Constructor_InitialState() public view {
@@ -33,8 +33,8 @@ contract HoloFiCardCollectionTest is Test {
     }
 
     function test_RevertIf_ZeroAddressACM() public {
-        vm.expectRevert(HoloFiCardCollection.ZeroAddressACM.selector);
-        new HoloFiCardCollection("HoloFi", "HFC", address(0));
+        vm.expectRevert(HoloFiVaultCard.ZeroAddressACM.selector);
+        new HoloFiVaultCard("HoloFi", "HFC", address(0));
     }
 
     function test_MintCard_Success() public {
@@ -45,7 +45,7 @@ contract HoloFiCardCollectionTest is Test {
         assertEq(cardCollection.ownerOf(1), user);
         assertEq(cardCollection.tokenURI(1), "ipfs://QmTestHash");
 
-        HoloFiCardCollection.CardMetadata memory card = cardCollection.getCard(1);
+        HoloFiVaultCard.CardMetadata memory card = cardCollection.getCard(1);
         assertEq(card.tokenId, 1);
         assertEq(card.attestationHash, TEST_ATTESTATION);
         assertEq(card.isLocked, false);
@@ -75,33 +75,33 @@ contract HoloFiCardCollectionTest is Test {
         uint256 tokenId = cardCollection.mintCard(user, TEST_ATTESTATION, "ipfs://QmTestHash");
 
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(HoloFiCardCollection.UnauthorizedLockOperator.selector, user));
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.UnauthorizedLockOperator.selector, user));
         cardCollection.setCardLock(tokenId, true);
     }
 
     function test_RevertIf_UnauthorizedMinter() public {
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(HoloFiCardCollection.UnauthorizedMinter.selector, user));
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.UnauthorizedMinter.selector, user));
         cardCollection.mintCard(user, TEST_ATTESTATION, "ipfs://QmTestHash");
     }
 
     function test_RevertIf_ZeroAddressRecipient() public {
         vm.prank(minter);
-        vm.expectRevert(HoloFiCardCollection.ZeroAddressRecipient.selector);
+        vm.expectRevert(HoloFiVaultCard.ZeroAddressRecipient.selector);
         cardCollection.mintCard(address(0), TEST_ATTESTATION, "ipfs://QmTestHash");
     }
 
     function test_RevertIf_InvalidAttestationHash() public {
         vm.prank(minter);
-        vm.expectRevert(HoloFiCardCollection.InvalidAttestationHash.selector);
+        vm.expectRevert(HoloFiVaultCard.InvalidAttestationHash.selector);
         cardCollection.mintCard(user, bytes32(0), "ipfs://QmTestHash");
     }
 
     function test_RevertIf_TokenDoesNotExist() public {
-        vm.expectRevert(abi.encodeWithSelector(HoloFiCardCollection.TokenDoesNotExist.selector, 999));
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.TokenDoesNotExist.selector, 999));
         cardCollection.getCard(999);
 
-        vm.expectRevert(abi.encodeWithSelector(HoloFiCardCollection.TokenDoesNotExist.selector, 999));
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.TokenDoesNotExist.selector, 999));
         cardCollection.verifyAttestation(999, RAW_DATA);
     }
 
@@ -125,7 +125,7 @@ contract HoloFiCardCollectionTest is Test {
 
         address recipient = address(0x4444);
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(HoloFiCardCollection.CardIsLocked.selector, tokenId));
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.CardIsLocked.selector, tokenId));
         cardCollection.transferFrom(user, recipient, tokenId);
     }
 }

@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
-import { HoloFiCardCollection } from "./HoloFiCardCollection.sol";
+import { HoloFiVaultCard } from "./HoloFiVaultCard.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 
@@ -25,7 +25,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     }
 
     AccessControlManager public immutable acm;
-    HoloFiCardCollection public immutable nftCollection;
+    HoloFiVaultCard public immutable nftCollection;
     HoloFiLendingPoolFactory public immutable poolFactory;
 
     mapping(uint256 => CollateralVault) public vaults;
@@ -115,7 +115,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
             revert ZeroAddressPoolFactory();
         }
         acm = AccessControlManager(_acm);
-        nftCollection = HoloFiCardCollection(_nftCollection);
+        nftCollection = HoloFiVaultCard(_nftCollection);
         poolFactory = HoloFiLendingPoolFactory(_poolFactory);
     }
 

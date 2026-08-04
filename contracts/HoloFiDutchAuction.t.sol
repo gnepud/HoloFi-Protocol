@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
-import { HoloFiCardCollection } from "./HoloFiCardCollection.sol";
+import { HoloFiVaultCard } from "./HoloFiVaultCard.sol";
 import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
 import { HoloFiDutchAuction } from "./HoloFiDutchAuction.sol";
@@ -29,7 +29,7 @@ contract MockDutchAuction is HoloFiDutchAuction {
 
 contract HoloFiDutchAuctionTest is Test {
     AccessControlManager public acm;
-    HoloFiCardCollection public cardCollection;
+    HoloFiVaultCard public cardCollection;
     HoloFiLendingPoolFactory public poolFactory;
     HoloFiVaultLoanCore public loanCore;
     HoloFiDutchAuction public dutchAuction;
@@ -45,7 +45,7 @@ contract HoloFiDutchAuctionTest is Test {
 
     function setUp() public {
         acm = new AccessControlManager(admin);
-        cardCollection = new HoloFiCardCollection("HoloFi TCG Cards", "HFC", address(acm));
+        cardCollection = new HoloFiVaultCard("HoloFi TCG Cards", "HFC", address(acm));
         poolFactory = new HoloFiLendingPoolFactory(address(acm));
         loanCore = new HoloFiVaultLoanCore(address(acm), address(cardCollection), address(poolFactory));
         dutchAuction = new HoloFiDutchAuction(address(acm), address(loanCore), address(poolFactory));

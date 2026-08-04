@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
-import { HoloFiCardCollection } from "./HoloFiCardCollection.sol";
+import { HoloFiVaultCard } from "./HoloFiVaultCard.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
@@ -13,7 +13,7 @@ import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Rec
 
 contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     AccessControlManager public acm;
-    HoloFiCardCollection public cardCollection;
+    HoloFiVaultCard public cardCollection;
     HoloFiLendingPoolFactory public poolFactory;
     HoloFiVaultLoanCore public loanCore;
 
@@ -36,7 +36,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
 
     function setUp() public {
         acm = new AccessControlManager(admin);
-        cardCollection = new HoloFiCardCollection("HoloFi TCG Cards", "HFC", address(acm));
+        cardCollection = new HoloFiVaultCard("HoloFi TCG Cards", "HFC", address(acm));
         poolFactory = new HoloFiLendingPoolFactory(address(acm));
         loanCore = new HoloFiVaultLoanCore(address(acm), address(cardCollection), address(poolFactory));
 
@@ -133,8 +133,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         assertEq(cardCollection.ownerOf(cardId1), address(loanCore));
         assertEq(cardCollection.ownerOf(cardId2), address(loanCore));
 
-        HoloFiCardCollection.CardMetadata memory card1 = cardCollection.getCard(cardId1);
-        HoloFiCardCollection.CardMetadata memory card2 = cardCollection.getCard(cardId2);
+        HoloFiVaultCard.CardMetadata memory card1 = cardCollection.getCard(cardId1);
+        HoloFiVaultCard.CardMetadata memory card2 = cardCollection.getCard(cardId2);
         assertTrue(card1.isLocked);
         assertTrue(card2.isLocked);
 
@@ -186,7 +186,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.withdrawCollateral(vaultId, withdrawTokens);
 
         assertEq(cardCollection.ownerOf(cardId1), store);
-        HoloFiCardCollection.CardMetadata memory card1 = cardCollection.getCard(cardId1);
+        HoloFiVaultCard.CardMetadata memory card1 = cardCollection.getCard(cardId1);
         assertFalse(card1.isLocked);
         assertEq(loanCore.nftVaultId(cardId1), 0);
 
