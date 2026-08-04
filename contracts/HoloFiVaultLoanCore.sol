@@ -12,7 +12,7 @@ import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
  * @notice Core credit manager and collateral escrow contract for HoloFi protocol.
  */
 contract HoloFiVaultLoanCore is IERC721Receiver {
-    enum VaultStatus { Active, Liquidating, Closed, Liquidated }
+    enum VaultStatus { Active, Liquidating, Closed }
 
     struct CollateralVault {
         uint256 vaultId;
@@ -460,7 +460,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
         vault.principalDebt = 0;
         vault.accumulatedInterest = 0;
-        vault.status = VaultStatus.Liquidated;
+        vault.status = VaultStatus.Closed;
 
         uint256 len = vault.tokenIds.length;
         for (uint256 i = 0; i < len; i++) {

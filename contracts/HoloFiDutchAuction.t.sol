@@ -317,7 +317,7 @@ contract HoloFiDutchAuctionTest is Test {
         assertEq(asset.balanceOf(store), 4_800 * 1e6); // Store borrowed $4,000 + receives $800 surplus = $4,800
         assertEq(asset.balanceOf(address(pool)), 100_400 * 1e6); // Pool 100,000 + 400 penalty
         assertEq(cardCollection.ownerOf(cardId1), liquidator); // Liquidator receives card NFT
-        assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Liquidated));
+        assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Closed));
         assertEq(loanCore.getVault(vaultId).principalDebt, 0);
     }
 
@@ -373,7 +373,7 @@ contract HoloFiDutchAuctionTest is Test {
         assertEq(asset.balanceOf(address(pool)), 100_400 * 1e6); // $100,000 principal + $400 penalty
         assertEq(asset.balanceOf(store), 4_800 * 1e6); // Store receives $800 surplus refund (4,000 borrowed + 800)
         assertEq(cardCollection.ownerOf(cardId1), liquidator);
-        assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Liquidated));
+        assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Closed));
     }
 
     function test_SettleAuction_AtReservePrice() public {
@@ -642,7 +642,7 @@ contract HoloFiDutchAuctionTest is Test {
         // Assertions
         assertEq(asset.balanceOf(address(pool)), 100_000 * 1e6); // Exact $4,000 debt restored
         assertEq(cardCollection.ownerOf(cardId1), treasury); // Card NFT assigned to treasury
-        assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Liquidated));
+        assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Closed));
         assertEq(loanCore.getVault(vaultId).principalDebt, 0);
     }
 }
