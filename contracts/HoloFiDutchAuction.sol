@@ -33,6 +33,8 @@ contract HoloFiDutchAuction is ReentrancyGuard {
     HoloFiVaultLoanCore public immutable loanCore;
     HoloFiLendingPoolFactory public immutable poolFactory;
 
+    address public treasury;
+
     mapping(uint256 => Auction) public auctions;
 
     event AuctionStarted(
@@ -53,6 +55,14 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         uint256 surplusToSeller
     );
 
+    event TreasuryUpdated(address indexed newTreasury);
+    event TreasuryBuybackExecuted(
+        uint256 indexed vaultId,
+        address indexed treasury,
+        address indexed lendingPool,
+        uint256 debtPaid
+    );
+
     error ZeroAddressACM();
     error ZeroAddressLoanCore();
     error ZeroAddressPoolFactory();
@@ -60,6 +70,10 @@ contract HoloFiDutchAuction is ReentrancyGuard {
     error AuctionNotActive(uint256 vaultId);
     error UnregisteredLendingPool(address pool);
     error InsufficientAuctionPrice(uint256 currentPrice, uint256 reservePrice);
+    error UnauthorizedAdmin(address caller);
+    error ZeroAddressTreasury();
+    error UnauthorizedTreasury(address caller);
+    error AuctionNotExpired(uint256 vaultId, uint256 currentTime, uint256 expiryTime);
 
     constructor(address _acm, address _loanCore, address _poolFactory) {
         if (_acm == address(0)) revert ZeroAddressACM();
@@ -171,7 +185,56 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         emit AuctionSettled(vaultId, msg.sender, lendingPool, currentPrice, debtPaid, penaltyPaid, surplus);
     }
 
+    function setTreasury(address _treasury) external {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedAdmin(msg.sender);
+        }
+        if (_treasury == address(0)) {
+            revert ZeroAddressTreasury();
+        }
+        treasury = _treasury;
+        emit TreasuryUpdated(_treasury);
+    }
+
+    function treasuryBuyback(uint256 vaultId, address lendingPool) external nonReentrant {
+        if (msg.sender != treasury) {
+            revert UnauthorizedTreasury(msg.sender);
+        }
+
+        Auction storage auction = auctions[vaultId];
+        if (auction.startTime == 0 || auction.isSettled) {
+            revert AuctionNotActive(vaultId);
+        }
+        if (!poolFactory.isValidPool(lendingPool)) {
+            revert UnregisteredLendingPool(lendingPool);
+        }
+
+        uint256 expiryTime = auction.startTime + auction.duration;
+        if (block.timestamp < expiryTime) {
+            revert AuctionNotExpired(vaultId, block.timestamp, expiryTime);
+        }
+
+        uint256 debtPaid = auction.debtAmount;
+
+        auction.isSettled = true;
+
+        IERC20 asset = IERC20(HoloFiLendingPool(lendingPool).asset());
+
+        // Step 1: Pull exact debtPaid from treasury to DutchAuction
+        asset.safeTransferFrom(msg.sender, address(this), debtPaid);
+
+        // Step 2: Approve & return debt to LendingPool
+        asset.forceApprove(lendingPool, debtPaid);
+        HoloFiLendingPool(lendingPool).returnLiquidity(address(this), debtPaid);
+
+        // Step 3: Finalize liquidation & transfer collateral NFTs to treasury
+        loanCore.finalizeLiquidation(vaultId, msg.sender);
+
+        emit TreasuryBuybackExecuted(vaultId, msg.sender, lendingPool, debtPaid);
+    }
+
     function getAuction(uint256 vaultId) external view returns (Auction memory) {
         return auctions[vaultId];
     }
 }
+

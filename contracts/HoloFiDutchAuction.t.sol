@@ -511,4 +511,139 @@ contract HoloFiDutchAuctionTest is Test {
         vm.expectRevert(abi.encodeWithSelector(HoloFiDutchAuction.UnregisteredLendingPool.selector, unauthorized));
         dutchAuction.settleAuction(vaultId, unauthorized);
     }
+
+    function test_SetTreasury_Success() public {
+        address treasury = address(0x5555);
+        vm.prank(admin);
+        dutchAuction.setTreasury(treasury);
+        assertEq(dutchAuction.treasury(), treasury);
+    }
+
+    function test_RevertIf_SetTreasury_Unauthorized() public {
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiDutchAuction.UnauthorizedAdmin.selector, unauthorized));
+        dutchAuction.setTreasury(address(0x5555));
+    }
+
+    function test_RevertIf_SetTreasury_ZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiDutchAuction.ZeroAddressTreasury.selector));
+        dutchAuction.setTreasury(address(0));
+    }
+
+    function test_RevertIf_TreasuryBuyback_UnauthorizedCaller() public {
+        address treasury = address(0x5555);
+        vm.prank(admin);
+        dutchAuction.setTreasury(treasury);
+
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiDutchAuction.UnauthorizedTreasury.selector, unauthorized));
+        dutchAuction.treasuryBuyback(1, address(0x1234));
+    }
+
+    function test_RevertIf_TreasuryBuyback_NotExpired() public {
+        address treasury = address(0x5555);
+        vm.prank(admin);
+        dutchAuction.setTreasury(treasury);
+
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+
+        dutchAuction.startAuction(vaultId);
+
+        // Time warp 24h (only half duration)
+        vm.warp(block.timestamp + 24 hours);
+
+        vm.prank(treasury);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HoloFiDutchAuction.AuctionNotExpired.selector,
+                vaultId,
+                block.timestamp,
+                block.timestamp + 24 hours
+            )
+        );
+        dutchAuction.treasuryBuyback(vaultId, address(pool));
+    }
+
+    function test_TreasuryBuyback_Success() public {
+        address treasury = address(0x5555);
+        vm.prank(admin);
+        dutchAuction.setTreasury(treasury);
+
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault();
+
+        vm.prank(store);
+        cardCollection.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+
+        MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
+        vm.prank(admin);
+        HoloFiLendingPool pool = HoloFiLendingPool(poolFactory.createPool(IERC20(address(asset)), "Pool EURC", "pEURC"));
+
+        vm.prank(admin);
+        pool.setLoanCore(address(loanCore));
+        asset.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
+
+        vm.prank(oracle);
+        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+
+        dutchAuction.startAuction(vaultId);
+
+        // Time warp 49h (past 48h expiration)
+        vm.warp(block.timestamp + 49 hours);
+
+        asset.mint(treasury, 4_000 * 1e6);
+
+        vm.startPrank(treasury);
+        asset.approve(address(dutchAuction), 4_000 * 1e6);
+
+        dutchAuction.treasuryBuyback(vaultId, address(pool));
+        vm.stopPrank();
+
+        // Assertions
+        assertEq(asset.balanceOf(address(pool)), 100_000 * 1e6); // Exact $4,000 debt restored
+        assertEq(cardCollection.ownerOf(cardId1), treasury); // Card NFT assigned to treasury
+        assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Liquidated));
+        assertEq(loanCore.getVault(vaultId).principalDebt, 0);
+    }
 }
+
