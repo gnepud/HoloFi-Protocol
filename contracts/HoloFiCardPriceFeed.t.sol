@@ -39,13 +39,8 @@ contract HoloFiCardPriceFeedTest is Test {
         vm.prank(oracle);
         priceFeed.setPrice(cardTypeId1, price);
 
-        (uint256 fetchedPrice, bool isValid) = priceFeed.getPrice(cardTypeId1);
-        assertTrue(isValid);
+        (uint256 fetchedPrice, uint128 lastUpdated) = priceFeed.getPrice(cardTypeId1);
         assertEq(fetchedPrice, price);
-
-        (uint128 p, uint128 lastUpdated, bool valid) = priceFeed.getLatestPriceData(cardTypeId1);
-        assertTrue(valid);
-        assertEq(p, price);
         assertEq(lastUpdated, block.timestamp);
     }
 
@@ -73,12 +68,12 @@ contract HoloFiCardPriceFeedTest is Test {
         vm.prank(oracle);
         priceFeed.setBatchPrices(ids, p);
 
-        (uint256 p1, bool v1) = priceFeed.getPrice(cardTypeId1);
-        (uint256 p2, bool v2) = priceFeed.getPrice(cardTypeId2);
-        assertTrue(v1);
-        assertTrue(v2);
+        (uint256 p1, uint128 u1) = priceFeed.getPrice(cardTypeId1);
+        (uint256 p2, uint128 u2) = priceFeed.getPrice(cardTypeId2);
         assertEq(p1, p[0]);
         assertEq(p2, p[1]);
+        assertEq(u1, block.timestamp);
+        assertEq(u2, block.timestamp);
     }
 
     function test_RevertIf_SetBatchPrices_LengthMismatch() public {
@@ -95,8 +90,8 @@ contract HoloFiCardPriceFeedTest is Test {
     }
 
     function test_GetPrice_Uninitialized() public view {
-        (uint256 price, bool isValid) = priceFeed.getPrice(cardTypeId1);
-        assertFalse(isValid);
+        (uint256 price, uint128 lastUpdated) = priceFeed.getPrice(cardTypeId1);
         assertEq(price, 0);
+        assertEq(lastUpdated, 0);
     }
 }

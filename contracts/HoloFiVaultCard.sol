@@ -11,6 +11,7 @@ import { AccessControlManager } from "./AccessControlManager.sol";
 contract HoloFiVaultCard is ERC721URIStorage {
     struct CardMetadata {
         uint256 tokenId;
+        bytes32 cardTypeId;
         bytes32 attestationHash;
         uint256 mintTimestamp;
         bool isLocked;
@@ -20,11 +21,12 @@ contract HoloFiVaultCard is ERC721URIStorage {
     uint256 public nextTokenId;
     AccessControlManager public immutable acm;
 
-    event CardMinted(uint256 indexed tokenId, address indexed to, bytes32 indexed attestationHash, string tokenUri);
+    event CardMinted(uint256 indexed tokenId, address indexed to, bytes32 indexed cardTypeId, string tokenUri);
     event CardLockUpdated(uint256 indexed tokenId, bool isLocked);
 
     error ZeroAddressACM();
     error ZeroAddressRecipient();
+    error ZeroCardTypeId();
     error InvalidAttestationHash();
     error UnauthorizedMinter(address caller);
     error UnauthorizedLockOperator(address caller);
@@ -55,6 +57,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
 
     function mintCard(
         address to,
+        bytes32 cardTypeId,
         bytes32 attestationHash,
         string calldata tokenUri
     ) external returns (uint256) {
@@ -64,6 +67,9 @@ contract HoloFiVaultCard is ERC721URIStorage {
         if (to == address(0)) {
             revert ZeroAddressRecipient();
         }
+        if (cardTypeId == bytes32(0)) {
+            revert ZeroCardTypeId();
+        }
         if (attestationHash == bytes32(0)) {
             revert InvalidAttestationHash();
         }
@@ -72,6 +78,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
 
         cards[tokenId] = CardMetadata({
             tokenId: tokenId,
+            cardTypeId: cardTypeId,
             attestationHash: attestationHash,
             mintTimestamp: block.timestamp,
             isLocked: false
@@ -80,7 +87,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, tokenUri);
 
-        emit CardMinted(tokenId, to, attestationHash, tokenUri);
+        emit CardMinted(tokenId, to, cardTypeId, tokenUri);
         return tokenId;
     }
 

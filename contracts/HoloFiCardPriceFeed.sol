@@ -70,21 +70,8 @@ contract HoloFiCardPriceFeed {
         }
     }
 
-    function getPrice(bytes32 cardTypeId) external view returns (uint256 price, bool isValid) {
+    function getPrice(bytes32 cardTypeId) external view returns (uint256 price, uint128 lastUpdated) {
         PriceData memory data = prices[cardTypeId];
-        if (data.price == 0) {
-            return (0, false);
-        }
-        return (uint256(data.price), true);
-    }
-
-    function getLatestPriceData(
-        bytes32 cardTypeId
-    ) external view returns (uint128 price, uint128 lastUpdated, bool isValid) {
-        PriceData memory data = prices[cardTypeId];
-        if (data.price == 0) {
-            return (0, 0, false);
-        }
-        return (data.price, data.lastUpdated, true);
+        return (uint256(data.price), data.lastUpdated);
     }
 }
