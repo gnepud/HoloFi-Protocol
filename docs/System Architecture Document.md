@@ -66,15 +66,13 @@ Retain standard OpenZeppelin ERC-721 transfer logic so NFTs transfer freely betw
 ```solidity
 struct CardMetadata {
     uint256 tokenId;
+    bytes32 cardTypeId;      // Card type identifier (e.g. keccak256 hash of name/set/grade)
     bytes32 attestationHash; // keccak256 hash of Blink metadata (Grader, Cert #, Grade)
     uint256 mintTimestamp;
     bool isLocked;           // True if committed inside a Collateral Vault
 }
 mapping(uint256 => CardMetadata) public cards;
-
 ```
-
-
 
 ---
 
@@ -158,6 +156,7 @@ struct CollateralVault {
 AccessControlManager public immutable acm;
 HoloFiVaultCard public immutable vaultCard;
 HoloFiLendingPoolFactory public immutable poolFactory;
+HoloFiCardPriceFeed public immutable priceFeed;
 
 mapping(uint256 => CollateralVault) public vaults;
 mapping(uint256 => uint256) public nftVaultId; // Fast lookup mapping (tokenId => vaultId)
@@ -218,16 +217,12 @@ $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
 
 #### D. Oracle Valuation, Pool Guard & Debt Settlement Mechanics
 
-```solidity
-mapping(uint256 => uint256) public cardFmv; // Fast lookup mapping (tokenId => FMV)
-```
-
-* **Oracle Valuation Updates (`setCardFmv` / `setBatchCardFmv`)**:
-  - Restricted to `ORACLE_ROLE` or `ADMIN_ROLE`. Reverts `UnauthorizedOracle` if unauthorized.
-  - Emits `CardFmvUpdated(tokenId, fmv)` for each card price update.
+* **Card Price Feed Architecture (`HoloFiCardPriceFeed`)**:
+  - Off-chain oracle pricing is decoupled into `HoloFiCardPriceFeed`, mapping `cardTypeId` $\rightarrow$ `PriceData(price, lastUpdated)`.
+  - Updates are performed via `setPrice(cardTypeId, price)` or `setBatchPrices(cardTypeIds, prices)` by authorized `ORACLE_ROLE` callers.
 
 * **Vault Valuation Aggregation (`getVaultFMV`)**:
-  - Computes total collateral value by summing `cardFmv[tokenId]` across all deposited cards in `vaults[vaultId].tokenIds`.
+  - Computes total collateral value by querying `cardTypeId = vaultCard.getCard(tokenId).cardTypeId` and calling `priceFeed.getPrice(cardTypeId)` across all deposited cards in `vaults[vaultId].tokenIds`.
 
 * **Credit Borrow Execution (`borrow`)**:
   - **Pool Security Guard**: Verifies `poolFactory.isValidPool(lendingPool)`. Reverts `UnregisteredLendingPool(lendingPool)` if pool is not registered in factory.

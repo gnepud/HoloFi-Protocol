@@ -13,10 +13,12 @@ describe("HoloFiDutchAuction Integration Tests", function () {
       await acm.getAddress(),
     ]);
     const poolFactory = await ethers.deployContract("HoloFiLendingPoolFactory", [await acm.getAddress()]);
+    const priceFeed = await ethers.deployContract("HoloFiCardPriceFeed", [await acm.getAddress()]);
     const loanCore = await ethers.deployContract("HoloFiVaultLoanCore", [
       await acm.getAddress(),
       await vaultCard.getAddress(),
       await poolFactory.getAddress(),
+      await priceFeed.getAddress(),
     ]);
     const dutchAuction = await ethers.deployContract("HoloFiDutchAuction", [
       await acm.getAddress(),
@@ -35,17 +37,19 @@ describe("HoloFiDutchAuction Integration Tests", function () {
 
     await loanCore.connect(admin).setDutchAuction(await dutchAuction.getAddress());
 
+    const cardTypeId1 = ethers.keccak256(ethers.toUtf8Bytes("card1"));
+    const cardTypeId2 = ethers.keccak256(ethers.toUtf8Bytes("card2"));
     const attestationHash1 = ethers.keccak256(ethers.toUtf8Bytes("attestation_card_1"));
     const attestationHash2 = ethers.keccak256(ethers.toUtf8Bytes("attestation_card_2"));
 
-    await vaultCard.connect(minter).mintCard(store.address, attestationHash1, "ipfs://card1");
-    await vaultCard.connect(minter).mintCard(store.address, attestationHash2, "ipfs://card2");
+    await vaultCard.connect(minter).mintCard(store.address, cardTypeId1, attestationHash1, "ipfs://card1");
+    await vaultCard.connect(minter).mintCard(store.address, cardTypeId2, attestationHash2, "ipfs://card2");
 
-    return { acm, vaultCard, poolFactory, loanCore, dutchAuction, owner, admin, minter, store, liquidator, unauthorized };
+    return { acm, vaultCard, poolFactory, priceFeed, loanCore, dutchAuction, owner, admin, minter, store, liquidator, unauthorized, cardTypeId1, cardTypeId2 };
   }
 
   it("Should execute end-to-end liquidation, paying off pool debt, refunding store surplus, and transferring card NFTs", async function () {
-    const { loanCore, vaultCard, dutchAuction, poolFactory, acm, admin, store, minter, liquidator } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
+    const { loanCore, vaultCard, priceFeed, dutchAuction, poolFactory, admin, store, minter, liquidator, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
 
     const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
@@ -59,8 +63,8 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
-    await loanCore.connect(minter).setBatchCardFmv(
-      [1n, 2n],
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
@@ -70,8 +74,8 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
 
     // Oracle drops card FMV so HF < 1.0 (card 1 dropped to $1,000, total FMV = $5,000)
-    await loanCore.connect(minter).setBatchCardFmv(
-      [1n, 2n],
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
       [ethers.parseUnits("1000", 6), ethers.parseUnits("4000", 6)]
     );
 
@@ -127,7 +131,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
   });
 
   it("Should allow treasury to execute buyback for expired unsold auction, restoring pool principal and assigning card NFTs", async function () {
-    const { loanCore, vaultCard, dutchAuction, poolFactory, acm, admin, store, minter, liquidator, unauthorized } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
+    const { loanCore, vaultCard, priceFeed, dutchAuction, poolFactory, admin, store, minter, liquidator, unauthorized, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
 
     const [,,,,,, treasury] = await ethers.getSigners();
     await dutchAuction.connect(admin).setTreasury(treasury.address);
@@ -145,8 +149,8 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
-    await loanCore.connect(minter).setBatchCardFmv(
-      [1n, 2n],
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
@@ -154,8 +158,8 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
 
     // Drop FMV so HF < 1.0
-    await loanCore.connect(minter).setBatchCardFmv(
-      [1n, 2n],
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
       [ethers.parseUnits("1000", 6), ethers.parseUnits("4000", 6)]
     );
 

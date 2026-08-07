@@ -25,13 +25,8 @@ describe("HoloFiCardPriceFeed Integration Tests", function () {
     await expect(priceFeed.connect(oracle).setPrice(cardTypeId1, price))
       .to.emit(priceFeed, "PriceUpdated");
 
-    const [fetchedPrice, isValid] = await priceFeed.getPrice(cardTypeId1);
-    expect(isValid).to.be.true;
+    const [fetchedPrice, lastUpdated] = await priceFeed.getPrice(cardTypeId1);
     expect(fetchedPrice).to.equal(price);
-
-    const [p, lastUpdated, valid] = await priceFeed.getLatestPriceData(cardTypeId1);
-    expect(valid).to.be.true;
-    expect(p).to.equal(price);
     expect(lastUpdated).to.be.greaterThan(0n);
   });
 
@@ -59,13 +54,13 @@ describe("HoloFiCardPriceFeed Integration Tests", function () {
 
     await priceFeed.connect(oracle).setBatchPrices([cardTypeId1, cardTypeId2], [price1, price2]);
 
-    const [p1, v1] = await priceFeed.getPrice(cardTypeId1);
-    const [p2, v2] = await priceFeed.getPrice(cardTypeId2);
+    const [p1, lastUpdated1] = await priceFeed.getPrice(cardTypeId1);
+    const [p2, lastUpdated2] = await priceFeed.getPrice(cardTypeId2);
 
-    expect(v1).to.be.true;
-    expect(v2).to.be.true;
     expect(p1).to.equal(price1);
     expect(p2).to.equal(price2);
+    expect(lastUpdated1).to.be.greaterThan(0n);
+    expect(lastUpdated2).to.be.greaterThan(0n);
   });
 
   it("Should revert constructor with zero address ACM", async function () {

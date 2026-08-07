@@ -13,26 +13,48 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       await acm.getAddress(),
     ]);
     const poolFactory = await ethers.deployContract("HoloFiLendingPoolFactory", [await acm.getAddress()]);
+    const priceFeed = await ethers.deployContract("HoloFiCardPriceFeed", [await acm.getAddress()]);
     const loanCore = await ethers.deployContract("HoloFiVaultLoanCore", [
       await acm.getAddress(),
       await vaultCard.getAddress(),
       await poolFactory.getAddress(),
+      await priceFeed.getAddress(),
     ]);
 
     const minterRole = await acm.MINTER_ROLE();
     const adminRole = await acm.ADMIN_ROLE();
+    const oracleRole = await acm.ORACLE_ROLE();
+
     await acm.connect(admin).grantRole(minterRole, minter.address);
+    await acm.connect(admin).grantRole(oracleRole, minter.address);
     await acm.connect(admin).grantRole(adminRole, await loanCore.getAddress());
     await acm.connect(admin).setKybStatus(store.address, true);
 
+    const cardTypeId1 = ethers.keccak256(ethers.toUtf8Bytes("CardType1"));
+    const cardTypeId2 = ethers.keccak256(ethers.toUtf8Bytes("CardType2"));
     const attestationHash1 = ethers.keccak256(ethers.toUtf8Bytes("attestation1"));
     const attestationHash2 = ethers.keccak256(ethers.toUtf8Bytes("attestation2"));
 
-    await vaultCard.connect(minter).mintCard(store.address, attestationHash1, "ipfs://card1");
-    await vaultCard.connect(minter).mintCard(store.address, attestationHash2, "ipfs://card2");
+    await vaultCard.connect(minter).mintCard(store.address, cardTypeId1, attestationHash1, "ipfs://card1");
+    await vaultCard.connect(minter).mintCard(store.address, cardTypeId2, attestationHash2, "ipfs://card2");
 
-    return { acm, vaultCard, poolFactory, loanCore, owner, admin, minter, store, unauthorized };
+    return { acm, vaultCard, poolFactory, priceFeed, loanCore, owner, admin, minter, store, unauthorized, cardTypeId1, cardTypeId2 };
   }
+
+  it("Should revert constructor with zero address priceFeed", async function () {
+    const { acm, vaultCard, poolFactory } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    await expect(
+      ethers.deployContract("HoloFiVaultLoanCore", [
+        await acm.getAddress(),
+        await vaultCard.getAddress(),
+        await poolFactory.getAddress(),
+        ethers.ZeroAddress,
+      ])
+    ).to.be.revertedWithCustomError(
+      await ethers.getContractFactory("HoloFiVaultLoanCore"),
+      "ZeroAddressPriceFeed"
+    );
+  });
 
   it("Should allow KYB approved store to create vault and escrow/withdraw cards", async function () {
     const { vaultCard, loanCore, store } = await networkHelpers.loadFixture(deployLoanCoreFixture);
@@ -114,10 +136,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
   });
 
   it("Should allow oracle to set card FMVs, calculate vault FMV, and execute borrow from lending pool", async function () {
-    const { loanCore, vaultCard, acm, admin, store, minter, poolFactory } = await networkHelpers.loadFixture(deployLoanCoreFixture);
-
-    const oracleRole = await acm.ORACLE_ROLE();
-    await acm.connect(admin).grantRole(oracleRole, minter.address);
+    const { loanCore, vaultCard, priceFeed, admin, store, minter, poolFactory, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
@@ -131,8 +150,8 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
-    await loanCore.connect(minter).setBatchCardFmv(
-      [1n, 2n],
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
@@ -156,10 +175,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
   });
 
   it("Should allow store to execute full loan repayment and release collateral NFTs", async function () {
-    const { loanCore, vaultCard, acm, admin, store, minter, poolFactory } = await networkHelpers.loadFixture(deployLoanCoreFixture);
-
-    const oracleRole = await acm.ORACLE_ROLE();
-    await acm.connect(admin).grantRole(oracleRole, minter.address);
+    const { loanCore, vaultCard, priceFeed, admin, store, minter, poolFactory, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
@@ -173,8 +189,8 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
-    await loanCore.connect(minter).setBatchCardFmv(
-      [1n, 2n],
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
@@ -237,10 +253,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
   });
 
   it("Should allow store to withdraw excess collateral when remaining FMV satisfies LTV ratio", async function () {
-    const { loanCore, vaultCard, acm, admin, store, minter, poolFactory } = await networkHelpers.loadFixture(deployLoanCoreFixture);
-
-    const oracleRole = await acm.ORACLE_ROLE();
-    await acm.connect(admin).grantRole(oracleRole, minter.address);
+    const { loanCore, vaultCard, priceFeed, admin, store, minter, poolFactory, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
@@ -254,8 +267,8 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
-    await loanCore.connect(minter).setBatchCardFmv(
-      [1n, 2n],
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
@@ -274,10 +287,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
   });
 
   it("Should allow store to execute atomic repayAndWithdraw to reduce debt and free collateral", async function () {
-    const { loanCore, vaultCard, acm, admin, store, minter, poolFactory } = await networkHelpers.loadFixture(deployLoanCoreFixture);
-
-    const oracleRole = await acm.ORACLE_ROLE();
-    await acm.connect(admin).grantRole(oracleRole, minter.address);
+    const { loanCore, vaultCard, priceFeed, admin, store, minter, poolFactory, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
@@ -291,8 +301,8 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
-    await loanCore.connect(minter).setBatchCardFmv(
-      [1n, 2n],
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
