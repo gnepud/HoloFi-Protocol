@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiVaultCard } from "./HoloFiVaultCard.sol";
+import { HoloFiCardPriceFeed } from "./HoloFiCardPriceFeed.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 
@@ -27,10 +28,10 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     AccessControlManager public immutable acm;
     HoloFiVaultCard public immutable vaultCard;
     HoloFiLendingPoolFactory public immutable poolFactory;
+    HoloFiCardPriceFeed public immutable priceFeed;
 
     mapping(uint256 => CollateralVault) public vaults;
     mapping(uint256 => uint256) public nftVaultId;
-    mapping(uint256 => uint256) public cardFmv;
     uint256 public nextVaultId = 1;
     address public dutchAuction;
 
@@ -46,7 +47,6 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     event VaultCreated(uint256 indexed vaultId, address indexed owner);
     event CollateralDeposited(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
     event CollateralWithdrawn(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
-    event CardFmvUpdated(uint256 indexed tokenId, uint256 fmv);
     event BorrowExecuted(
         uint256 indexed vaultId,
         address indexed owner,
@@ -83,6 +83,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error ZeroAddressACM();
     error ZeroAddressVaultCard();
     error ZeroAddressPoolFactory();
+    error ZeroAddressPriceFeed();
     error UnregisteredLendingPool(address pool);
     error KybRequired(address caller);
     error UnauthorizedVaultOwner(uint256 vaultId, address caller);
@@ -93,10 +94,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error TokenNotInVault(uint256 tokenId, uint256 vaultId);
     error InvalidRiskParameters();
     error UnauthorizedAdmin(address caller);
-    error UnauthorizedOracle(address caller);
     error ZeroBorrowAmount();
     error ExceedsMaxBorrowCapacity(uint256 vaultId, uint256 requestedTotalDebt, uint256 maxBorrowCapacity);
-    error ArrayLengthMismatch();
     error ZeroRepayAmount();
     error NoActiveDebt(uint256 vaultId);
     error InsufficientCollateralRatio(uint256 vaultId, uint256 totalDebt, uint256 remainingMaxBorrow);
@@ -104,7 +103,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error VaultNotEligibleForLiquidation(uint256 vaultId, uint256 healthFactor);
     error VaultNotLiquidating(uint256 vaultId);
 
-    constructor(address _acm, address _vaultCard, address _poolFactory) {
+    constructor(address _acm, address _vaultCard, address _poolFactory, address _priceFeed) {
         if (_acm == address(0)) {
             revert ZeroAddressACM();
         }
@@ -114,9 +113,13 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         if (_poolFactory == address(0)) {
             revert ZeroAddressPoolFactory();
         }
+        if (_priceFeed == address(0)) {
+            revert ZeroAddressPriceFeed();
+        }
         acm = AccessControlManager(_acm);
         vaultCard = HoloFiVaultCard(_vaultCard);
         poolFactory = HoloFiLendingPoolFactory(_poolFactory);
+        priceFeed = HoloFiCardPriceFeed(_priceFeed);
     }
 
     function setDutchAuction(address _dutchAuction) external {
@@ -271,7 +274,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
                 if (nftVaultId[tokenId] != vaultId) {
                     revert TokenNotInVault(tokenId, vaultId);
                 }
-                withdrawnFmv += cardFmv[tokenId];
+                HoloFiVaultCard.CardMetadata memory card = vaultCard.getCard(tokenId);
+                (uint256 price, ) = priceFeed.getPrice(card.cardTypeId);
+                withdrawnFmv += price;
             }
 
             uint256 totalFmv = getVaultFMV(vaultId);
@@ -319,31 +324,13 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         }
     }
 
-    function setCardFmv(uint256 tokenId, uint256 fmv) external {
-        if (!acm.hasRole(acm.ORACLE_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
-            revert UnauthorizedOracle(msg.sender);
-        }
-        cardFmv[tokenId] = fmv;
-        emit CardFmvUpdated(tokenId, fmv);
-    }
-
-    function setBatchCardFmv(uint256[] calldata tokenIds, uint256[] calldata fmvs) external {
-        if (!acm.hasRole(acm.ORACLE_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
-            revert UnauthorizedOracle(msg.sender);
-        }
-        if (tokenIds.length != fmvs.length) {
-            revert ArrayLengthMismatch();
-        }
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            cardFmv[tokenIds[i]] = fmvs[i];
-            emit CardFmvUpdated(tokenIds[i], fmvs[i]);
-        }
-    }
-
     function getVaultFMV(uint256 vaultId) public view returns (uint256 totalFmv) {
         uint256[] memory tokenIds = vaults[vaultId].tokenIds;
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            totalFmv += cardFmv[tokenIds[i]];
+            uint256 tokenId = tokenIds[i];
+            HoloFiVaultCard.CardMetadata memory card = vaultCard.getCard(tokenId);
+            (uint256 price, ) = priceFeed.getPrice(card.cardTypeId);
+            totalFmv += price;
         }
     }
 

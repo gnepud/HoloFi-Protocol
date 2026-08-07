@@ -8,6 +8,7 @@ import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
 import { HoloFiDutchAuction } from "./HoloFiDutchAuction.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
+import { HoloFiCardPriceFeed } from "./HoloFiCardPriceFeed.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -31,6 +32,7 @@ contract HoloFiDutchAuctionTest is Test {
     AccessControlManager public acm;
     HoloFiVaultCard public vaultCard;
     HoloFiLendingPoolFactory public poolFactory;
+    HoloFiCardPriceFeed public priceFeed;
     HoloFiVaultLoanCore public loanCore;
     HoloFiDutchAuction public dutchAuction;
 
@@ -40,6 +42,9 @@ contract HoloFiDutchAuctionTest is Test {
     address public unauthorized = address(0x9999);
     address public oracle = address(0x5555);
 
+    bytes32 public cardTypeId1 = keccak256("Pikachu");
+    bytes32 public cardTypeId2 = keccak256("Charizard");
+
     uint256 public cardId1;
     uint256 public cardId2;
 
@@ -47,7 +52,8 @@ contract HoloFiDutchAuctionTest is Test {
         acm = new AccessControlManager(admin);
         vaultCard = new HoloFiVaultCard("HoloFi TCG Cards", "HFC", address(acm));
         poolFactory = new HoloFiLendingPoolFactory(address(acm));
-        loanCore = new HoloFiVaultLoanCore(address(acm), address(vaultCard), address(poolFactory));
+        priceFeed = new HoloFiCardPriceFeed(address(acm));
+        loanCore = new HoloFiVaultLoanCore(address(acm), address(vaultCard), address(poolFactory), address(priceFeed));
         dutchAuction = new HoloFiDutchAuction(address(acm), address(loanCore), address(poolFactory));
 
         vm.startPrank(admin);
@@ -61,8 +67,8 @@ contract HoloFiDutchAuctionTest is Test {
         bytes32 attestationHash1 = keccak256("raw_data_1");
         bytes32 attestationHash2 = keccak256("raw_data_2");
         vm.startPrank(minter);
-        cardId1 = vaultCard.mintCard(store, attestationHash1, "ipfs://card1");
-        cardId2 = vaultCard.mintCard(store, attestationHash2, "ipfs://card2");
+        cardId1 = vaultCard.mintCard(store, cardTypeId1, attestationHash1, "ipfs://card1");
+        cardId2 = vaultCard.mintCard(store, cardTypeId2, attestationHash2, "ipfs://card2");
         vm.stopPrank();
     }
 
@@ -110,7 +116,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -127,7 +133,7 @@ contract HoloFiDutchAuctionTest is Test {
         // Oracle drops FMV of cardId1 from $10,000 to $5,000
         // Debt = $4,000, Liquidation threshold = 70% -> max threshold value = $3,500. HF = 3,500 / 4,000 = 0.875 < 1.0
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
@@ -154,7 +160,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -170,7 +176,7 @@ contract HoloFiDutchAuctionTest is Test {
 
         // Drop FMV to $5,000 -> HF = 3,500 / 4,000 = 0.875 < 1.0
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
@@ -195,7 +201,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -233,7 +239,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -247,7 +253,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
@@ -281,7 +287,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -297,7 +303,7 @@ contract HoloFiDutchAuctionTest is Test {
 
         // Drop FMV to $5,000 -> HF = 3,500 / 4,000 = 0.875 < 1.0
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
@@ -335,7 +341,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -350,7 +356,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
@@ -390,7 +396,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -404,7 +410,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
@@ -443,7 +449,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -457,7 +463,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         mockAuction.startAuction(vaultId);
 
@@ -489,7 +495,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -503,7 +509,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
@@ -559,7 +565,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -573,7 +579,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
@@ -610,7 +616,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
 
         MockERC20 asset = new MockERC20("Euro Coin", "EURC", 6);
         vm.prank(admin);
@@ -624,7 +630,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6, address(pool));
 
         vm.prank(oracle);
-        loanCore.setCardFmv(cardId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
 
         dutchAuction.startAuction(vaultId);
 
