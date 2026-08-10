@@ -50,10 +50,55 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     expect(await dutchAuction.treasury()).to.equal(treasury.address);
 
     // Verify role authorizations via ACM
+    const ADMIN_ROLE = await acm.ADMIN_ROLE();
     const ORACLE_ROLE = await acm.ORACLE_ROLE();
     const MINTER_ROLE = await acm.MINTER_ROLE();
 
+    expect(await acm.hasRole(ADMIN_ROLE, loanCoreAddr)).to.be.true;
     expect(await acm.hasRole(ORACLE_ROLE, oracleFeeder.address)).to.be.true;
     expect(await acm.hasRole(MINTER_ROLE, minter.address)).to.be.true;
+  });
+
+  it("Should allow KYB store to deposit collateral into loanCore deployed via Ignition without UnauthorizedLockOperator revert", async function () {
+    const [admin, oracleFeeder, minter, treasury, store] = await ethers.getSigners();
+
+    const { acm, vaultCard, loanCore } = await ignition.deploy(
+      DeployHoloFiProtocol,
+      {
+        parameters: {
+          DeployHoloFiProtocol: {
+            oracleFeeder: oracleFeeder.address,
+            minter: minter.address,
+            treasury: treasury.address,
+          },
+        },
+      }
+    );
+
+    const acmContract = acm as any;
+    const vaultCardContract = vaultCard as any;
+    const loanCoreContract = loanCore as any;
+
+    // Approve KYB status for store
+    await acmContract.connect(admin).setKybStatus(store.address, true);
+
+    // Mint card NFT to store
+    const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
+    const attestationHash = ethers.keccak256(ethers.toUtf8Bytes("attestation_raw"));
+    await vaultCardContract.connect(minter).mintCard(store.address, cardTypeId, attestationHash, "ipfs://card1");
+
+    // Store creates vault, approves loanCore, and deposits collateral
+    await loanCoreContract.connect(store).createVault();
+    const loanCoreAddr = await loanCore.getAddress();
+    await vaultCardContract.connect(store).setApprovalForAll(loanCoreAddr, true);
+
+    // Deposit collateral (triggers vaultCard.setCardLock which requires ADMIN_ROLE on loanCore)
+    await expect(loanCoreContract.connect(store).depositCollateral(1n, [1n]))
+      .to.emit(loanCore, "CollateralDeposited")
+      .withArgs(1n, store.address, [1n]);
+
+    expect(await vaultCardContract.ownerOf(1n)).to.equal(loanCoreAddr);
+    const cardInfo = await vaultCardContract.getCard(1n);
+    expect(cardInfo.isLocked).to.be.true;
   });
 });
