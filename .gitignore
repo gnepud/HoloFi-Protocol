@@ -29,3 +29,6 @@
 
 # Snapshot cheatcodes output
 /snapshots
+
+# Ignition deployments for local chain
+ignition/deployments/chain-31337
