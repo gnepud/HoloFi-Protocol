@@ -23,6 +23,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
 
     event CardMinted(uint256 indexed tokenId, address indexed to, bytes32 indexed cardTypeId, string tokenUri);
     event CardLockUpdated(uint256 indexed tokenId, bool isLocked);
+    event CardBurned(uint256 indexed tokenId, address indexed owner, bytes32 indexed cardTypeId);
 
     error ZeroAddressACM();
     error ZeroAddressRecipient();
@@ -30,6 +31,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
     error InvalidAttestationHash();
     error UnauthorizedMinter(address caller);
     error UnauthorizedLockOperator(address caller);
+    error UnauthorizedBurner(address caller);
     error TokenDoesNotExist(uint256 tokenId);
     error CardIsLocked(uint256 tokenId);
 
@@ -47,7 +49,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
 
     function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address) {
         address from = _ownerOf(tokenId);
-        if (from != address(0) && to != address(0)) {
+        if (from != address(0)) {
             if (cards[tokenId].isLocked) {
                 revert CardIsLocked(tokenId);
             }
@@ -101,6 +103,26 @@ contract HoloFiVaultCard is ERC721URIStorage {
 
         cards[tokenId].isLocked = isLocked;
         emit CardLockUpdated(tokenId, isLocked);
+    }
+
+    function burnCard(uint256 tokenId) external {
+        address owner = _ownerOf(tokenId);
+        if (owner == address(0)) {
+            revert TokenDoesNotExist(tokenId);
+        }
+        if (cards[tokenId].isLocked) {
+            revert CardIsLocked(tokenId);
+        }
+        if (msg.sender != owner && !_isAuthorized(owner, msg.sender, tokenId)) {
+            revert UnauthorizedBurner(msg.sender);
+        }
+
+        bytes32 cardTypeId = cards[tokenId].cardTypeId;
+        delete cards[tokenId];
+
+        _burn(tokenId);
+
+        emit CardBurned(tokenId, owner, cardTypeId);
     }
 
     function getCard(uint256 tokenId) external view returns (CardMetadata memory) {

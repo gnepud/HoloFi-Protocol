@@ -136,4 +136,61 @@ contract HoloFiVaultCardTest is Test {
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.CardIsLocked.selector, tokenId));
         vaultCard.transferFrom(user, recipient, tokenId);
     }
+
+    function test_BurnCard_OwnerSuccess() public {
+        vm.prank(minter);
+        uint256 tokenId = vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash");
+
+        vm.prank(user);
+        vm.expectEmit(true, true, true, true);
+        emit HoloFiVaultCard.CardBurned(tokenId, user, TEST_CARD_TYPE_ID);
+        vaultCard.burnCard(tokenId);
+
+        assertEq(vaultCard.balanceOf(user), 0);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.TokenDoesNotExist.selector, tokenId));
+        vaultCard.getCard(tokenId);
+    }
+
+    function test_BurnCard_ApprovedOperatorSuccess() public {
+        vm.prank(minter);
+        uint256 tokenId = vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash");
+
+        address operator = address(0x5555);
+        vm.prank(user);
+        vaultCard.approve(operator, tokenId);
+
+        vm.prank(operator);
+        vm.expectEmit(true, true, true, true);
+        emit HoloFiVaultCard.CardBurned(tokenId, user, TEST_CARD_TYPE_ID);
+        vaultCard.burnCard(tokenId);
+
+        assertEq(vaultCard.balanceOf(user), 0);
+    }
+
+    function test_RevertIf_BurnCard_UnauthorizedCaller() public {
+        vm.prank(minter);
+        uint256 tokenId = vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash");
+
+        address unauthorized = address(0x6666);
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.UnauthorizedBurner.selector, unauthorized));
+        vaultCard.burnCard(tokenId);
+    }
+
+    function test_RevertIf_BurnCard_LockedCard() public {
+        vm.prank(minter);
+        uint256 tokenId = vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash");
+
+        vm.prank(admin);
+        vaultCard.setCardLock(tokenId, true);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.CardIsLocked.selector, tokenId));
+        vaultCard.burnCard(tokenId);
+    }
+
+    function test_RevertIf_BurnCard_NonExistentToken() public {
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.TokenDoesNotExist.selector, 999));
+        vaultCard.burnCard(999);
+    }
 }
