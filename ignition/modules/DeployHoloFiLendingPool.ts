@@ -2,43 +2,33 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 import DeployHoloFiProtocol from "./DeployHoloFiProtocol.js";
 
 const DeployHoloFiLendingPool = buildModule("DeployHoloFiLendingPool", (m) => {
-  const { acm, poolFactory, loanCore } = m.useModule(DeployHoloFiProtocol);
+  const protocol = m.useModule(DeployHoloFiProtocol);
 
-  const mockMintAmount = m.getParameter("mockMintAmount", 1_000_000_000_000n); // 1,000,000 EURC (6 decimals)
+  const existingAssetAddress = m.getParameter("existingAssetAddress");
   const poolName = m.getParameter("poolName", "Pool EURC");
   const poolSymbol = m.getParameter("poolSymbol", "pEURC");
 
-  const mockAsset = m.contract("MockERC20", ["Euro Coin", "EURC", 6]);
-  const assetAddressParam = m.getParameter("existingAssetAddress", mockAsset);
-  const assetAddress = m.contractAt("MockERC20", assetAddressParam);
+  const asset = m.contractAt("MockERC20", existingAssetAddress);
 
-  // Create pool via factory
-  const createPoolTx = m.call(poolFactory, "createPool", [
-    assetAddress,
+  const createPoolTx = m.call(protocol.poolFactory, "createPool", [
+    asset,
     poolName,
     poolSymbol,
   ]);
 
-  // Query deployed pool address
-  const poolAddress = m.staticCall(poolFactory, "getPool", [assetAddress], undefined, {
+  const poolAddress = m.staticCall(protocol.poolFactory, "getPool", [asset], 0, {
     after: [createPoolTx],
   });
 
-  // Bind contract instance
   const lendingPool = m.contractAt("HoloFiLendingPool", poolAddress);
 
-  // Set loanCore in lendingPool
-  m.call(lendingPool, "setLoanCore", [loanCore]);
-
-  // Mint mock liquidity
-  m.call(mockAsset, "mint", [poolAddress, mockMintAmount]);
+  m.call(lendingPool, "setLoanCore", [protocol.loanCore]);
 
   return {
+    ...protocol,
     lendingPool,
-    assetAddress,
-    mockAsset,
+    asset,
   };
 });
 
 export default DeployHoloFiLendingPool;
-

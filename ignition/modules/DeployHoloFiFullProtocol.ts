@@ -1,16 +1,15 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 import DeployHoloFiProtocol from "./DeployHoloFiProtocol.js";
-import DeployHoloFiLendingPool from "./DeployHoloFiLendingPool.js";
+import DeployHoloFiLendingPoolWithMock from "./DeployHoloFiLendingPoolWithMock.js";
 
 const DeployHoloFiFullProtocol = buildModule("DeployHoloFiFullProtocol", (m) => {
   const protocol = m.useModule(DeployHoloFiProtocol);
-  const { lendingPool, mockAsset, assetAddress } = m.useModule(DeployHoloFiLendingPool);
+  const poolModule = m.useModule(DeployHoloFiLendingPoolWithMock);
 
   return {
     ...protocol,
-    lendingPool,
-    mockAsset,
-    assetAddress,
+    lendingPool: poolModule.lendingPool,
+    mockAsset: poolModule.mockAsset,
   };
 });
 
