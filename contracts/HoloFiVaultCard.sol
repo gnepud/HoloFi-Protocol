@@ -22,8 +22,13 @@ contract HoloFiVaultCard is ERC721URIStorage {
     AccessControlManager public immutable acm;
 
     event CardMinted(uint256 indexed tokenId, address indexed to, bytes32 indexed cardTypeId, string tokenUri);
+    event CardBurned(
+        uint256 indexed tokenId,
+        address indexed owner,
+        bytes32 indexed cardTypeId,
+        bytes32 attestationHash
+    );
     event CardLockUpdated(uint256 indexed tokenId, bool isLocked);
-    event CardBurned(uint256 indexed tokenId, address indexed owner, bytes32 indexed cardTypeId);
 
     error ZeroAddressACM();
     error ZeroAddressRecipient();
@@ -118,11 +123,12 @@ contract HoloFiVaultCard is ERC721URIStorage {
         }
 
         bytes32 cardTypeId = cards[tokenId].cardTypeId;
+        bytes32 attestationHash = cards[tokenId].attestationHash;
         delete cards[tokenId];
 
         _burn(tokenId);
 
-        emit CardBurned(tokenId, owner, cardTypeId);
+        emit CardBurned(tokenId, owner, cardTypeId, attestationHash);
     }
 
     function getCard(uint256 tokenId) external view returns (CardMetadata memory) {

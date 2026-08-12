@@ -130,7 +130,7 @@ describe("HoloFiVaultCard Integration Tests", function () {
     // 1. Owner burns token 1
     await expect(vaultCard.connect(user).burnCard(1n))
       .to.emit(vaultCard, "CardBurned")
-      .withArgs(1n, user.address, cardTypeId);
+      .withArgs(1n, user.address, cardTypeId, attestationHash);
 
     await expect(vaultCard.ownerOf(1n)).to.be.revertedWithCustomError(vaultCard, "ERC721NonexistentToken").withArgs(1n);
     await expect(vaultCard.getCard(1n)).to.be.revertedWithCustomError(vaultCard, "TokenDoesNotExist").withArgs(1n);
@@ -143,7 +143,7 @@ describe("HoloFiVaultCard Integration Tests", function () {
     await vaultCard.connect(user).approve(unauthorized.address, 2n);
     await expect(vaultCard.connect(unauthorized).burnCard(2n))
       .to.emit(vaultCard, "CardBurned")
-      .withArgs(2n, user.address, cardTypeId);
+      .withArgs(2n, user.address, cardTypeId, attestationHash);
 
     await expect(vaultCard.ownerOf(2n)).to.be.revertedWithCustomError(vaultCard, "ERC721NonexistentToken").withArgs(2n);
     await expect(vaultCard.getCard(2n)).to.be.revertedWithCustomError(vaultCard, "TokenDoesNotExist").withArgs(2n);

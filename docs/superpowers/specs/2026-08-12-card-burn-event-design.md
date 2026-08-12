@@ -26,7 +26,12 @@ This specification defines the card NFT burning mechanism and event emission for
 
 #### 1. Event Definition
 ```solidity
-event CardBurned(uint256 indexed tokenId, address indexed owner, bytes32 indexed cardTypeId);
+event CardBurned(
+    uint256 indexed tokenId,
+    address indexed owner,
+    bytes32 indexed cardTypeId,
+    bytes32 attestationHash
+);
 ```
 
 #### 2. Custom Error Definition
@@ -62,11 +67,12 @@ function burnCard(uint256 tokenId) external {
     }
 
     bytes32 cardTypeId = cards[tokenId].cardTypeId;
+    bytes32 attestationHash = cards[tokenId].attestationHash;
     delete cards[tokenId];
 
     _burn(tokenId);
 
-    emit CardBurned(tokenId, owner, cardTypeId);
+    emit CardBurned(tokenId, owner, cardTypeId, attestationHash);
 }
 ```
 

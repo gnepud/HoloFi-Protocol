@@ -143,7 +143,7 @@ contract HoloFiVaultCardTest is Test {
 
         vm.prank(user);
         vm.expectEmit(true, true, true, true);
-        emit HoloFiVaultCard.CardBurned(tokenId, user, TEST_CARD_TYPE_ID);
+        emit HoloFiVaultCard.CardBurned(tokenId, user, TEST_CARD_TYPE_ID, TEST_ATTESTATION);
         vaultCard.burnCard(tokenId);
 
         assertEq(vaultCard.balanceOf(user), 0);
@@ -161,7 +161,7 @@ contract HoloFiVaultCardTest is Test {
 
         vm.prank(operator);
         vm.expectEmit(true, true, true, true);
-        emit HoloFiVaultCard.CardBurned(tokenId, user, TEST_CARD_TYPE_ID);
+        emit HoloFiVaultCard.CardBurned(tokenId, user, TEST_CARD_TYPE_ID, TEST_ATTESTATION);
         vaultCard.burnCard(tokenId);
 
         assertEq(vaultCard.balanceOf(user), 0);
