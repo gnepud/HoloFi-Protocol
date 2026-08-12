@@ -115,4 +115,65 @@ describe("HoloFiVaultCard Integration Tests", function () {
     await vaultCard.connect(user).transferFrom(user.address, unauthorized.address, 1n);
     expect(await vaultCard.ownerOf(1n)).to.equal(unauthorized.address);
   });
+
+  it("Should allow owner or approved operator to burn card and emit CardBurned event", async function () {
+    const { vaultCard, minter, user, unauthorized } = await networkHelpers.loadFixture(deployVaultCardFixture);
+    const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
+    const attestationHash = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert"));
+
+    // Mint token 1 to user
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI1");
+
+    // Mint token 2 to user
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI2");
+
+    // 1. Owner burns token 1
+    await expect(vaultCard.connect(user).burnCard(1n))
+      .to.emit(vaultCard, "CardBurned")
+      .withArgs(1n, user.address, cardTypeId);
+
+    await expect(vaultCard.ownerOf(1n)).to.be.revertedWithCustomError(vaultCard, "ERC721NonexistentToken").withArgs(1n);
+    await expect(vaultCard.getCard(1n)).to.be.revertedWithCustomError(vaultCard, "TokenDoesNotExist").withArgs(1n);
+
+    const deletedCard = await vaultCard.cards(1n);
+    expect(deletedCard.tokenId).to.equal(0n);
+    expect(deletedCard.cardTypeId).to.equal(ethers.ZeroHash);
+
+    // 2. Approved operator burns token 2
+    await vaultCard.connect(user).approve(unauthorized.address, 2n);
+    await expect(vaultCard.connect(unauthorized).burnCard(2n))
+      .to.emit(vaultCard, "CardBurned")
+      .withArgs(2n, user.address, cardTypeId);
+
+    await expect(vaultCard.ownerOf(2n)).to.be.revertedWithCustomError(vaultCard, "ERC721NonexistentToken").withArgs(2n);
+    await expect(vaultCard.getCard(2n)).to.be.revertedWithCustomError(vaultCard, "TokenDoesNotExist").withArgs(2n);
+  });
+
+  it("Should revert burn attempt on locked card with CardIsLocked", async function () {
+    const { vaultCard, admin, minter, user } = await networkHelpers.loadFixture(deployVaultCardFixture);
+    const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
+    const attestationHash = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert"));
+
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI");
+    await vaultCard.connect(admin).setCardLock(1n, true);
+
+    await expect(
+      vaultCard.connect(user).burnCard(1n)
+    ).to.be.revertedWithCustomError(vaultCard, "CardIsLocked")
+      .withArgs(1n);
+  });
+
+  it("Should revert burn attempt by unauthorized caller with UnauthorizedBurner", async function () {
+    const { vaultCard, minter, user, unauthorized } = await networkHelpers.loadFixture(deployVaultCardFixture);
+    const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
+    const attestationHash = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert"));
+
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI");
+
+    await expect(
+      vaultCard.connect(unauthorized).burnCard(1n)
+    ).to.be.revertedWithCustomError(vaultCard, "UnauthorizedBurner")
+      .withArgs(unauthorized.address);
+  });
 });
+
