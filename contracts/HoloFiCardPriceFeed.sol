@@ -2,12 +2,15 @@
 pragma solidity ^0.8.28;
 
 import { AccessControlManager } from "./AccessControlManager.sol";
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
  * @title HoloFiCardPriceFeed
  * @notice Gas-optimized Fair Market Value (FMV) price feed registry for TCG card models.
  */
 contract HoloFiCardPriceFeed {
+    using EnumerableSet for EnumerableSet.Bytes32Set;
+
     struct PriceData {
         uint128 price;       // 18-decimal USD Fair Market Value
         uint128 lastUpdated; // Block timestamp of price update
@@ -15,6 +18,7 @@ contract HoloFiCardPriceFeed {
 
     AccessControlManager public immutable acm;
     mapping(bytes32 => PriceData) public prices;
+    EnumerableSet.Bytes32Set private _cardTypeIds;
 
     error ZeroAddressACM();
     error UnauthorizedOracle(address caller);
@@ -41,6 +45,7 @@ contract HoloFiCardPriceFeed {
         if (price == 0) {
             revert ZeroPrice();
         }
+        _cardTypeIds.add(cardTypeId);
         prices[cardTypeId] = PriceData({
             price: price,
             lastUpdated: uint128(block.timestamp)
@@ -62,6 +67,7 @@ contract HoloFiCardPriceFeed {
                 revert ZeroPrice();
             }
             bytes32 cardTypeId = cardTypeIds[i];
+            _cardTypeIds.add(cardTypeId);
             prices[cardTypeId] = PriceData({
                 price: price,
                 lastUpdated: uint128(block.timestamp)
@@ -73,5 +79,21 @@ contract HoloFiCardPriceFeed {
     function getPrice(bytes32 cardTypeId) external view returns (uint256 price, uint128 lastUpdated) {
         PriceData memory data = prices[cardTypeId];
         return (uint256(data.price), data.lastUpdated);
+    }
+
+    function getCardTypesCount() external view returns (uint256) {
+        return _cardTypeIds.length();
+    }
+
+    function getCardTypeAt(uint256 index) external view returns (bytes32) {
+        return _cardTypeIds.at(index);
+    }
+
+    function getAllCardTypes() external view returns (bytes32[] memory) {
+        return _cardTypeIds.values();
+    }
+
+    function isSupportedCardType(bytes32 cardTypeId) external view returns (bool) {
+        return _cardTypeIds.contains(cardTypeId);
     }
 }

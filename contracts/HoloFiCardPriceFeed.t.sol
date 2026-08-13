@@ -94,4 +94,83 @@ contract HoloFiCardPriceFeedTest is Test {
         assertEq(price, 0);
         assertEq(lastUpdated, 0);
     }
+
+    function test_SetPrice_AddsToEnumerableSet() public {
+        assertEq(priceFeed.getCardTypesCount(), 0);
+        assertFalse(priceFeed.isSupportedCardType(cardTypeId1));
+
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 50_000 * 1e18);
+
+        assertEq(priceFeed.getCardTypesCount(), 1);
+        assertTrue(priceFeed.isSupportedCardType(cardTypeId1));
+        assertEq(priceFeed.getCardTypeAt(0), cardTypeId1);
+
+        // Setting price again should not duplicate in set
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 60_000 * 1e18);
+        assertEq(priceFeed.getCardTypesCount(), 1);
+    }
+
+    function test_SetBatchPrices_AddsToEnumerableSet() public {
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = cardTypeId1;
+        ids[1] = cardTypeId2;
+
+        uint128[] memory p = new uint128[](2);
+        p[0] = 50_000 * 1e18;
+        p[1] = 150_000 * 1e18;
+
+        vm.prank(oracle);
+        priceFeed.setBatchPrices(ids, p);
+
+        assertEq(priceFeed.getCardTypesCount(), 2);
+        assertTrue(priceFeed.isSupportedCardType(cardTypeId1));
+        assertTrue(priceFeed.isSupportedCardType(cardTypeId2));
+        assertEq(priceFeed.getCardTypeAt(0), cardTypeId1);
+        assertEq(priceFeed.getCardTypeAt(1), cardTypeId2);
+    }
+
+    function test_RevertIf_GetCardTypeAt_OutOfBounds() public {
+        vm.expectRevert();
+        priceFeed.getCardTypeAt(0);
+
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 50_000 * 1e18);
+
+        vm.expectRevert();
+        priceFeed.getCardTypeAt(1);
+    }
+
+    function test_IsSupportedCardType() public {
+        assertFalse(priceFeed.isSupportedCardType(cardTypeId1));
+        assertFalse(priceFeed.isSupportedCardType(cardTypeId2));
+
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 50_000 * 1e18);
+
+        assertTrue(priceFeed.isSupportedCardType(cardTypeId1));
+        assertFalse(priceFeed.isSupportedCardType(cardTypeId2));
+    }
+
+    function test_GetAllCardTypes() public {
+        bytes32[] memory allEmpty = priceFeed.getAllCardTypes();
+        assertEq(allEmpty.length, 0);
+
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = cardTypeId1;
+        ids[1] = cardTypeId2;
+
+        uint128[] memory p = new uint128[](2);
+        p[0] = 50_000 * 1e18;
+        p[1] = 150_000 * 1e18;
+
+        vm.prank(oracle);
+        priceFeed.setBatchPrices(ids, p);
+
+        bytes32[] memory all = priceFeed.getAllCardTypes();
+        assertEq(all.length, 2);
+        assertEq(all[0], cardTypeId1);
+        assertEq(all[1], cardTypeId2);
+    }
 }
