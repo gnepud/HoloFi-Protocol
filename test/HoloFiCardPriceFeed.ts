@@ -67,4 +67,67 @@ describe("HoloFiCardPriceFeed Integration Tests", function () {
     await expect(ethers.deployContract("HoloFiCardPriceFeed", [ethers.ZeroAddress]))
       .to.be.revertedWithCustomError(await ethers.getContractFactory("HoloFiCardPriceFeed"), "ZeroAddressACM");
   });
+
+  it("Should track and enumerate card types after single price update and duplicate updates", async function () {
+    const { priceFeed, oracle, cardTypeId1 } = await networkHelpers.loadFixture(deployPriceFeedFixture);
+
+    expect(await priceFeed.getCardTypesCount()).to.equal(0n);
+    expect(await priceFeed.isSupportedCardType(cardTypeId1)).to.be.false;
+    expect(await priceFeed.getAllCardTypes()).to.deep.equal([]);
+
+    const price1 = ethers.parseUnits("50000", 18);
+    await priceFeed.connect(oracle).setPrice(cardTypeId1, price1);
+
+    expect(await priceFeed.getCardTypesCount()).to.equal(1n);
+    expect(await priceFeed.isSupportedCardType(cardTypeId1)).to.be.true;
+    expect(await priceFeed.getCardTypeAt(0)).to.equal(cardTypeId1);
+    expect(await priceFeed.getAllCardTypes()).to.deep.equal([cardTypeId1]);
+
+    // Duplicate price update should not increase count or duplicate entry
+    const priceUpdated = ethers.parseUnits("55000", 18);
+    await priceFeed.connect(oracle).setPrice(cardTypeId1, priceUpdated);
+
+    expect(await priceFeed.getCardTypesCount()).to.equal(1n);
+    expect(await priceFeed.isSupportedCardType(cardTypeId1)).to.be.true;
+    expect(await priceFeed.getCardTypeAt(0)).to.equal(cardTypeId1);
+    expect(await priceFeed.getAllCardTypes()).to.deep.equal([cardTypeId1]);
+  });
+
+  it("Should track and enumerate card types after batch price updates", async function () {
+    const { priceFeed, oracle, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployPriceFeedFixture);
+
+    const price1 = ethers.parseUnits("50000", 18);
+    const price2 = ethers.parseUnits("150000", 18);
+
+    await priceFeed.connect(oracle).setBatchPrices([cardTypeId1, cardTypeId2], [price1, price2]);
+
+    expect(await priceFeed.getCardTypesCount()).to.equal(2n);
+    expect(await priceFeed.isSupportedCardType(cardTypeId1)).to.be.true;
+    expect(await priceFeed.isSupportedCardType(cardTypeId2)).to.be.true;
+    expect(await priceFeed.getCardTypeAt(0)).to.equal(cardTypeId1);
+    expect(await priceFeed.getCardTypeAt(1)).to.equal(cardTypeId2);
+    expect(await priceFeed.getAllCardTypes()).to.deep.equal([cardTypeId1, cardTypeId2]);
+  });
+
+  it("Should revert when getCardTypeAt is called with out-of-bounds index", async function () {
+    const { priceFeed, oracle, cardTypeId1 } = await networkHelpers.loadFixture(deployPriceFeedFixture);
+
+    await expect(priceFeed.getCardTypeAt(0)).to.be.revertedWithPanic(0x32);
+
+    await priceFeed.connect(oracle).setPrice(cardTypeId1, ethers.parseUnits("50000", 18));
+    expect(await priceFeed.getCardTypeAt(0)).to.equal(cardTypeId1);
+    await expect(priceFeed.getCardTypeAt(1)).to.be.revertedWithPanic(0x32);
+  });
+
+  it("Should correctly report supported and unsupported card types", async function () {
+    const { priceFeed, oracle, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployPriceFeedFixture);
+
+    expect(await priceFeed.isSupportedCardType(cardTypeId1)).to.be.false;
+    expect(await priceFeed.isSupportedCardType(cardTypeId2)).to.be.false;
+
+    await priceFeed.connect(oracle).setPrice(cardTypeId1, ethers.parseUnits("50000", 18));
+
+    expect(await priceFeed.isSupportedCardType(cardTypeId1)).to.be.true;
+    expect(await priceFeed.isSupportedCardType(cardTypeId2)).to.be.false;
+  });
 });

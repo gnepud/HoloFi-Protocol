@@ -218,8 +218,14 @@ $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
 #### D. Oracle Valuation, Pool Guard & Debt Settlement Mechanics
 
 * **Card Price Feed Architecture (`HoloFiCardPriceFeed`)**:
-  - Off-chain oracle pricing is decoupled into `HoloFiCardPriceFeed`, mapping `cardTypeId` $\rightarrow$ `PriceData(price, lastUpdated)`.
-  - Updates are performed via `setPrice(cardTypeId, price)` or `setBatchPrices(cardTypeIds, prices)` by authorized `ORACLE_ROLE` callers.
+  - Off-chain oracle pricing is decoupled into `HoloFiCardPriceFeed`, mapping `cardTypeId` $\rightarrow$ `PriceData(price, lastUpdated)` where `price` is packed 128-bit USD FMV (18 decimals) and `lastUpdated` is a 128-bit timestamp in a single storage slot.
+  - Card type registration and enumeration is managed via OpenZeppelin's `EnumerableSet.Bytes32Set` (`_cardTypeIds`).
+  - Updates are performed via `setPrice(cardTypeId, price)` or `setBatchPrices(cardTypeIds, prices)` by authorized `ORACLE_ROLE` callers, which automatically register new card type IDs into the set without duplication.
+  - Enumeration and query interfaces:
+    - `getCardTypesCount()`: Returns total number of registered card types.
+    - `getCardTypeAt(uint256 index)`: Returns the card type ID at a specific index.
+    - `getAllCardTypes()`: Returns an array of all registered card type IDs.
+    - `isSupportedCardType(bytes32 cardTypeId)`: Returns whether a card type ID is registered in the feed.
 
 * **Vault Valuation Aggregation (`getVaultFMV`)**:
   - Computes total collateral value by querying `cardTypeId = vaultCard.getCard(tokenId).cardTypeId` and calling `priceFeed.getPrice(cardTypeId)` across all deposited cards in `vaults[vaultId].tokenIds`.
