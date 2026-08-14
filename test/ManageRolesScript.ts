@@ -100,6 +100,14 @@ describe("ManageRoles CLI Script Integration Tests", function () {
       const parsed = parseCliArgs(["node", "manage-roles.ts", "--help"]);
       expect(parsed.help).to.be.true;
     });
+
+    it("Should parse --network flag", function () {
+      const target = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+      const parsed = parseCliArgs(["node", "manage-roles.ts", "check", target, "--network", "sepolia"]);
+      expect(parsed.action).to.equal("check");
+      expect(parsed.targetAddress).to.equal(target);
+      expect(parsed.networkName).to.equal("sepolia");
+    });
   });
 
   describe("resolveRoleHash & getRoleNameFromHash", function () {

@@ -53,6 +53,7 @@ export interface ParsedCliArgs {
   targetAddress?: string;
   roleName?: string;
   acmAddress?: string;
+  networkName?: string;
   help?: boolean;
 }
 
@@ -388,11 +389,12 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
         result.help = true;
         continue;
       }
-      if (arg === "--network") {
-        i++; // skip network parameter value
+      if (arg === "--network" && i + 1 < argv.length) {
+        result.networkName = argv[++i];
         continue;
       }
       if (arg.startsWith("--network=")) {
+        result.networkName = arg.split("=")[1];
         continue;
       }
       if (arg === "--acm" && i + 1 < argv.length) {
@@ -403,7 +405,7 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
         result.acmAddress = arg.split("=")[1];
         continue;
       }
-      if (arg === "run" || arg.endsWith(".ts") || arg.endsWith(".js")) {
+      if (arg === "run" || arg.endsWith(".ts") || arg.endsWith(".js") || arg.endsWith("tsx")) {
         continue;
       }
       if (arg.startsWith("-")) {
@@ -418,6 +420,10 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
     const token = tokens[i];
     if (token === "--help" || token === "-h" || token === "help") {
       result.help = true;
+    } else if (token === "--network" && i + 1 < tokens.length) {
+      result.networkName = tokens[++i];
+    } else if (token.startsWith("--network=")) {
+      result.networkName = token.split("=")[1];
     } else if (token === "--acm" && i + 1 < tokens.length) {
       result.acmAddress = tokens[++i];
     } else if (token.startsWith("--acm=")) {
@@ -483,37 +489,45 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
       result.acmAddress = envAcm.trim();
     }
   }
+  if (!result.networkName && process.env.HARDHAT_NETWORK) {
+    result.networkName = process.env.HARDHAT_NETWORK.trim();
+  }
 
   return result;
 }
 
 export function printHelp(): void {
   console.log(`
-HoloFi Protocol - Role Management CLI
-======================================
+HoloFi Protocol - Role Permissions Management CLI
+==================================================
 
 Usage:
-  npx hardhat run scripts/manage-roles.ts --network <network> -- <action> <target_address> [role_name] [acm_address]
+  npm run roles <action> <target_address> [role_name] [acm_address] [--network <network>]
+  # or
+  npx tsx scripts/manage-roles.ts <action> <target_address> [role_name] [acm_address] [--network <network>]
+  # or with Hardhat run:
+  ACTION=<action> ACCOUNT=<target_address> [ROLE=<role_name>] npx hardhat run scripts/manage-roles.ts --network <network>
 
 Actions:
   check | list | view     View all role assignments and KYB status for target address
   grant | add             Grant a role to target address
   revoke | remove         Revoke a role from target address
 
-Supported Roles & Aliases:
-  DEFAULT_ADMIN_ROLE      DEFAULT_ADMIN, default_admin, root, zero, 0x0000...
-  ADMIN_ROLE              ADMIN, admin
-  ORACLE_ROLE             ORACLE, oracle, feeder, price_feeder
-  MINTER_ROLE             MINTER, minter
-  KYB_MANAGER_ROLE        KYB_MANAGER, kyb_manager, kyb
-  PAUSER_ROLE             PAUSER, pauser
+Supported Roles & Aliases (case-insensitive):
+  ADMIN_ROLE              admin, ADMIN
+  ORACLE_ROLE             oracle, feeder, price_feeder
+  MINTER_ROLE             minter, MINTER
+  KYB_MANAGER_ROLE        kyb, kyb_manager
+  PAUSER_ROLE             pauser, PAUSER
+  DEFAULT_ADMIN_ROLE      default_admin, root, zero, 0x0000...
   <bytes32>               Direct hex role hash (e.g. 0xdf8b4c520...)
 
 Examples:
-  npx hardhat run scripts/manage-roles.ts --network localhost -- check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-  npx hardhat run scripts/manage-roles.ts --network localhost -- grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 ORACLE_ROLE
-  npx hardhat run scripts/manage-roles.ts --network localhost -- revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 oracle
-  npx hardhat run scripts/manage-roles.ts --network baseSepolia -- check 0x... 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B
+  npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  npm run roles grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 MINTER_ROLE
+  npm run roles grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 oracle
+  npm run roles revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter
+  npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --network sepolia
 `);
 }
 
@@ -528,13 +542,24 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { ethers: hhEthers } = await network.connect();
+  const targetNetwork = args.networkName || process.env.HARDHAT_NETWORK || "localhost";
+  let connection;
+  try {
+    connection = await network.connect({ network: targetNetwork });
+  } catch (err) {
+    throw new Error(
+      `Failed to connect to network "${targetNetwork}": ${err instanceof Error ? err.message : err}. ` +
+      `If targeting localhost, ensure a local RPC node is running (e.g. npx hardhat node).`
+    );
+  }
+
+  const { ethers: hhEthers } = connection;
   const signers = await hhEthers.getSigners();
   const signer = signers.length > 0 ? signers[0] : null;
   const provider = signer ? signer.provider : hhEthers.provider;
 
   if (!provider) {
-    throw new Error("Unable to establish provider connection to current network.");
+    throw new Error(`Unable to establish provider connection to network "${targetNetwork}".`);
   }
 
   if (!args.targetAddress || !ethers.isAddress(args.targetAddress)) {
@@ -544,6 +569,19 @@ export async function main(): Promise<void> {
   }
 
   const acmAddress = await resolveAcmAddress(provider, args.acmAddress);
+
+  // Validate contract bytecode existence
+  const code = await provider.getCode(acmAddress);
+  if (code === "0x" || code === "0x0") {
+    throw new Error(
+      `No contract bytecode deployed at AccessControlManager address ${acmAddress} on network "${targetNetwork}".\n` +
+      `Please ensure that:\n` +
+      `  1. Your local node is running (e.g. npx hardhat node)\n` +
+      `  2. Contracts are deployed on "${targetNetwork}" (e.g. npx hardhat ignition deploy ignition/modules/DeployHoloFiFullProtocol.ts --network ${targetNetwork})\n` +
+      `  3. You are pointing to the correct network (--network <network>) or address (--acm <address>)`
+    );
+  }
+
   const acm = getAcmContract(acmAddress, signer || provider);
 
   switch (args.action) {
@@ -563,7 +601,7 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       if (!signer) {
-        console.error("\n[ERROR] Signer is required to execute grant transaction.");
+        console.error("\n[ERROR] Signer is required to execute grant transaction on network \"" + targetNetwork + "\".");
         process.exit(1);
       }
       await grantRole(acm, signer, args.targetAddress, args.roleName);
@@ -579,7 +617,7 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       if (!signer) {
-        console.error("\n[ERROR] Signer is required to execute revoke transaction.");
+        console.error("\n[ERROR] Signer is required to execute revoke transaction on network \"" + targetNetwork + "\".");
         process.exit(1);
       }
       await revokeRole(acm, signer, args.targetAddress, args.roleName);
