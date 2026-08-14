@@ -1,0 +1,586 @@
+import fs from "node:fs";
+import path from "node:path";
+import { ethers } from "ethers";
+import { network } from "hardhat";
+
+export interface RoleDefinition {
+  name: string;
+  hash: string;
+}
+
+export const KNOWN_ROLES: RoleDefinition[] = [
+  { name: "DEFAULT_ADMIN_ROLE", hash: ethers.ZeroHash },
+  { name: "ADMIN_ROLE", hash: ethers.id("ADMIN_ROLE") },
+  { name: "ORACLE_ROLE", hash: ethers.id("ORACLE_ROLE") },
+  { name: "MINTER_ROLE", hash: ethers.id("MINTER_ROLE") },
+  { name: "KYB_MANAGER_ROLE", hash: ethers.id("KYB_MANAGER_ROLE") },
+  { name: "PAUSER_ROLE", hash: ethers.id("PAUSER_ROLE") },
+];
+
+export const ACM_ABI = [
+  "function hasRole(bytes32 role, address account) external view returns (bool)",
+  "function getRoleAdmin(bytes32 role) external view returns (bytes32)",
+  "function grantRole(bytes32 role, address account) external",
+  "function revokeRole(bytes32 role, address account) external",
+  "function isKybApproved(address account) external view returns (bool)",
+  "function setKybStatus(address account, bool status) external",
+  "function DEFAULT_ADMIN_ROLE() external view returns (bytes32)",
+  "function ADMIN_ROLE() external view returns (bytes32)",
+  "function ORACLE_ROLE() external view returns (bytes32)",
+  "function KYB_MANAGER_ROLE() external view returns (bytes32)",
+  "function PAUSER_ROLE() external view returns (bytes32)",
+  "function MINTER_ROLE() external view returns (bytes32)",
+  "event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)",
+  "event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)",
+  "event KybStatusUpdated(address indexed account, bool status, address indexed operator)",
+];
+
+export interface RoleStatus {
+  name: string;
+  hash: string;
+  granted: boolean;
+}
+
+export interface RoleCheckResult {
+  targetAddress: string;
+  acmAddress: string;
+  roles: RoleStatus[];
+  isKybApproved: boolean;
+}
+
+export interface ParsedCliArgs {
+  action?: string;
+  targetAddress?: string;
+  roleName?: string;
+  acmAddress?: string;
+  help?: boolean;
+}
+
+/**
+ * Resolve a role name or alias to its bytes32 role hash.
+ */
+export function resolveRoleHash(roleInput: string): string {
+  const normalized = roleInput.trim();
+
+  // If already a valid 32-byte hex string
+  if (/^0x[0-9a-fA-F]{64}$/.test(normalized)) {
+    return normalized.toLowerCase();
+  }
+
+  const key = normalized.toUpperCase().replace(/[\s-]+/g, "_");
+
+  switch (key) {
+    case "DEFAULT_ADMIN_ROLE":
+    case "DEFAULT_ADMIN":
+    case "DEFAULTADMIN":
+    case "ROOT":
+    case "ZERO":
+      return ethers.ZeroHash;
+    case "ADMIN_ROLE":
+    case "ADMIN":
+      return ethers.id("ADMIN_ROLE");
+    case "ORACLE_ROLE":
+    case "ORACLE":
+    case "FEEDER":
+    case "PRICE_FEEDER":
+      return ethers.id("ORACLE_ROLE");
+    case "MINTER_ROLE":
+    case "MINTER":
+      return ethers.id("MINTER_ROLE");
+    case "KYB_MANAGER_ROLE":
+    case "KYB_MANAGER":
+    case "KYB":
+      return ethers.id("KYB_MANAGER_ROLE");
+    case "PAUSER_ROLE":
+    case "PAUSER":
+      return ethers.id("PAUSER_ROLE");
+    default:
+      throw new Error(
+        `Unknown role "${roleInput}". Supported roles: DEFAULT_ADMIN_ROLE, ADMIN_ROLE, ORACLE_ROLE, MINTER_ROLE, KYB_MANAGER_ROLE, PAUSER_ROLE, or a 32-byte hex string.`
+      );
+  }
+}
+
+/**
+ * Get human-readable role name from hash if known.
+ */
+export function getRoleNameFromHash(hash: string): string {
+  const normalized = hash.toLowerCase();
+  for (const role of KNOWN_ROLES) {
+    if (role.hash.toLowerCase() === normalized) {
+      return role.name;
+    }
+  }
+  return hash;
+}
+
+/**
+ * Resolve AccessControlManager contract address with precedence:
+ * 1. CLI argument
+ * 2. Environment variable ACM_ADDRESS / ACCESS_CONTROL_MANAGER_ADDRESS
+ * 3. Ignition deployment files
+ */
+export async function resolveAcmAddress(
+  provider: ethers.Provider,
+  cliAcmAddress?: string,
+  projectRoot: string = process.cwd()
+): Promise<string> {
+  if (cliAcmAddress && ethers.isAddress(cliAcmAddress)) {
+    return ethers.getAddress(cliAcmAddress);
+  }
+
+  if (process.env.ACM_ADDRESS && ethers.isAddress(process.env.ACM_ADDRESS)) {
+    return ethers.getAddress(process.env.ACM_ADDRESS);
+  }
+
+  if (
+    process.env.ACCESS_CONTROL_MANAGER_ADDRESS &&
+    ethers.isAddress(process.env.ACCESS_CONTROL_MANAGER_ADDRESS)
+  ) {
+    return ethers.getAddress(process.env.ACCESS_CONTROL_MANAGER_ADDRESS);
+  }
+
+  // Check Ignition deployments
+  try {
+    const networkInfo = await provider.getNetwork();
+    const chainId = networkInfo.chainId.toString();
+
+    // 1. Check exact chain deployment file
+    const chainDeploymentPath = path.resolve(
+      projectRoot,
+      `ignition/deployments/chain-${chainId}/deployed_addresses.json`
+    );
+    if (fs.existsSync(chainDeploymentPath)) {
+      const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
+      for (const [key, addr] of Object.entries(data)) {
+        if (
+          key.includes("AccessControlManager") &&
+          typeof addr === "string" &&
+          ethers.isAddress(addr)
+        ) {
+          return ethers.getAddress(addr);
+        }
+      }
+    }
+
+    // 2. Search all ignition deployments directories
+    const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
+    if (fs.existsSync(deploymentsDir)) {
+      const entries = fs.readdirSync(deploymentsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const file = path.join(deploymentsDir, entry.name, "deployed_addresses.json");
+          if (fs.existsSync(file)) {
+            const data = JSON.parse(fs.readFileSync(file, "utf-8"));
+            for (const [key, addr] of Object.entries(data)) {
+              if (
+                key.includes("AccessControlManager") &&
+                typeof addr === "string" &&
+                ethers.isAddress(addr)
+              ) {
+                return ethers.getAddress(addr);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Search root deployed_addresses.json
+    const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
+    if (fs.existsSync(rootDeployed)) {
+      const data = JSON.parse(fs.readFileSync(rootDeployed, "utf-8"));
+      for (const [key, addr] of Object.entries(data)) {
+        if (
+          key.includes("AccessControlManager") &&
+          typeof addr === "string" &&
+          ethers.isAddress(addr)
+        ) {
+          return ethers.getAddress(addr);
+        }
+      }
+    }
+  } catch {
+    // Continue to error throw
+  }
+
+  throw new Error(
+    "Could not resolve AccessControlManager address. Please provide it as a CLI argument, set ACM_ADDRESS in your environment, or deploy the protocol via Ignition."
+  );
+}
+
+/**
+ * Returns a typed/typed-compatible contract instance for AccessControlManager.
+ */
+export function getAcmContract(
+  address: string,
+  runner: ethers.ContractRunner
+): ethers.Contract {
+  return new ethers.Contract(address, ACM_ABI, runner);
+}
+
+/**
+ * Check all roles and KYB status for a target address.
+ */
+export async function checkRoles(
+  acm: ethers.Contract,
+  targetAddress: string
+): Promise<RoleCheckResult> {
+  const checksumTarget = ethers.getAddress(targetAddress);
+  const acmAddress = await acm.getAddress();
+
+  const roleChecks = await Promise.all(
+    KNOWN_ROLES.map(async (role) => {
+      const granted = (await acm.hasRole(role.hash, checksumTarget)) as boolean;
+      return {
+        name: role.name,
+        hash: role.hash,
+        granted,
+      };
+    })
+  );
+
+  const isKybApproved = (await acm.isKybApproved(checksumTarget)) as boolean;
+
+  return {
+    targetAddress: checksumTarget,
+    acmAddress,
+    roles: roleChecks,
+    isKybApproved,
+  };
+}
+
+/**
+ * Format RoleCheckResult into an ASCII table string.
+ */
+export function formatRoleTable(result: RoleCheckResult): string {
+  const border = "=".repeat(80);
+  const divider = "-".repeat(80);
+  const subDivider = "-".repeat(24) + "+" + "-".repeat(46) + "+" + "-".repeat(10);
+
+  const kybStatusStr = result.isKybApproved ? "YES [APPROVED]" : "NO [NOT APPROVED]";
+
+  const roleLines = result.roles.map((r) => {
+    const paddedName = r.name.padEnd(24);
+    const shortHash =
+      r.hash === ethers.ZeroHash
+        ? "0x0000000000000000000000000000000000000000..."
+        : `${r.hash.slice(0, 42)}...`;
+    const paddedHash = shortHash.padEnd(46);
+    const status = r.granted ? "[GRANTED]" : "[NOT GRANTED]";
+    return `${paddedName}| ${paddedHash}| ${status}`;
+  });
+
+  return [
+    border,
+    "                       HoloFi AccessControlManager Status                       ",
+    border,
+    `Target Address : ${result.targetAddress}`,
+    `ACM Address    : ${result.acmAddress}`,
+    `KYB Approved   : ${kybStatusStr}`,
+    divider,
+    "ROLE NAME               | ROLE HASH                                    | STATUS",
+    subDivider,
+    ...roleLines,
+    border,
+  ].join("\n");
+}
+
+/**
+ * Grant a role to a target address.
+ */
+export async function grantRole(
+  acm: ethers.Contract,
+  signer: ethers.Signer,
+  targetAddress: string,
+  roleInput: string
+): Promise<ethers.ContractTransactionReceipt | null> {
+  const checksumTarget = ethers.getAddress(targetAddress);
+  const roleHash = resolveRoleHash(roleInput);
+  const roleName = getRoleNameFromHash(roleHash);
+
+  const isAlreadyGranted = (await acm.hasRole(roleHash, checksumTarget)) as boolean;
+  if (isAlreadyGranted) {
+    console.log(`[INFO] Target ${checksumTarget} already has role ${roleName}.`);
+    return null;
+  }
+
+  const roleAdmin = (await acm.getRoleAdmin(roleHash)) as string;
+  const signerAddress = await signer.getAddress();
+  const hasAdmin = (await acm.hasRole(roleAdmin, signerAddress)) as boolean;
+
+  if (!hasAdmin) {
+    const adminName = getRoleNameFromHash(roleAdmin);
+    throw new Error(
+      `Signer ${signerAddress} does not have required admin role (${adminName}) to grant ${roleName}.`
+    );
+  }
+
+  console.log(`Submitting grantRole(${roleName}, ${checksumTarget})...`);
+  const connectedAcm = acm.connect(signer) as ethers.Contract;
+  const tx = (await connectedAcm.grantRole(roleHash, checksumTarget)) as ethers.ContractTransactionResponse;
+  console.log(`Transaction submitted: ${tx.hash}`);
+
+  const receipt = await tx.wait();
+  console.log(`Transaction confirmed in block: ${receipt?.blockNumber ?? "unknown"}`);
+  console.log(`[SUCCESS] Role ${roleName} successfully granted to ${checksumTarget}.`);
+
+  return receipt;
+}
+
+/**
+ * Revoke a role from a target address.
+ */
+export async function revokeRole(
+  acm: ethers.Contract,
+  signer: ethers.Signer,
+  targetAddress: string,
+  roleInput: string
+): Promise<ethers.ContractTransactionReceipt | null> {
+  const checksumTarget = ethers.getAddress(targetAddress);
+  const roleHash = resolveRoleHash(roleInput);
+  const roleName = getRoleNameFromHash(roleHash);
+
+  const isGranted = (await acm.hasRole(roleHash, checksumTarget)) as boolean;
+  if (!isGranted) {
+    console.log(`[INFO] Target ${checksumTarget} does not currently have role ${roleName}.`);
+    return null;
+  }
+
+  const roleAdmin = (await acm.getRoleAdmin(roleHash)) as string;
+  const signerAddress = await signer.getAddress();
+  const hasAdmin = (await acm.hasRole(roleAdmin, signerAddress)) as boolean;
+
+  if (!hasAdmin) {
+    const adminName = getRoleNameFromHash(roleAdmin);
+    throw new Error(
+      `Signer ${signerAddress} does not have required admin role (${adminName}) to revoke ${roleName}.`
+    );
+  }
+
+  console.log(`Submitting revokeRole(${roleName}, ${checksumTarget})...`);
+  const connectedAcm = acm.connect(signer) as ethers.Contract;
+  const tx = (await connectedAcm.revokeRole(roleHash, checksumTarget)) as ethers.ContractTransactionResponse;
+  console.log(`Transaction submitted: ${tx.hash}`);
+
+  const receipt = await tx.wait();
+  console.log(`Transaction confirmed in block: ${receipt?.blockNumber ?? "unknown"}`);
+  console.log(`[SUCCESS] Role ${roleName} successfully revoked from ${checksumTarget}.`);
+
+  return receipt;
+}
+
+/**
+ * Parse CLI arguments from process.argv.
+ */
+export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
+  const result: ParsedCliArgs = {};
+
+  const doubleDashIdx = argv.indexOf("--");
+  let tokens: string[] = [];
+
+  if (doubleDashIdx !== -1) {
+    tokens = argv.slice(doubleDashIdx + 1);
+  } else {
+    for (let i = 2; i < argv.length; i++) {
+      const arg = argv[i];
+      if (arg === "--help" || arg === "-h" || arg === "help") {
+        result.help = true;
+        continue;
+      }
+      if (arg === "--network") {
+        i++; // skip network parameter value
+        continue;
+      }
+      if (arg.startsWith("--network=")) {
+        continue;
+      }
+      if (arg === "--acm" && i + 1 < argv.length) {
+        result.acmAddress = argv[++i];
+        continue;
+      }
+      if (arg.startsWith("--acm=")) {
+        result.acmAddress = arg.split("=")[1];
+        continue;
+      }
+      if (arg === "run" || arg.endsWith(".ts") || arg.endsWith(".js")) {
+        continue;
+      }
+      if (arg.startsWith("-")) {
+        continue;
+      }
+      tokens.push(arg);
+    }
+  }
+
+  const positional: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === "--help" || token === "-h" || token === "help") {
+      result.help = true;
+    } else if (token === "--acm" && i + 1 < tokens.length) {
+      result.acmAddress = tokens[++i];
+    } else if (token.startsWith("--acm=")) {
+      result.acmAddress = token.split("=")[1];
+    } else if (!token.startsWith("-")) {
+      positional.push(token);
+    }
+  }
+
+  if (positional.length > 0) {
+    result.action = positional[0].toLowerCase();
+  }
+  if (positional.length > 1) {
+    result.targetAddress = positional[1];
+  }
+
+  if (
+    result.action === "check" ||
+    result.action === "list" ||
+    result.action === "view" ||
+    result.action === "status"
+  ) {
+    if (positional.length > 2) {
+      if (!result.acmAddress && ethers.isAddress(positional[2])) {
+        result.acmAddress = positional[2];
+      } else {
+        result.roleName = positional[2];
+      }
+    }
+  } else if (
+    result.action === "grant" ||
+    result.action === "add" ||
+    result.action === "revoke" ||
+    result.action === "remove"
+  ) {
+    if (positional.length > 2) {
+      result.roleName = positional[2];
+    }
+    if (positional.length > 3 && !result.acmAddress && ethers.isAddress(positional[3])) {
+      result.acmAddress = positional[3];
+    }
+  }
+
+  return result;
+}
+
+export function printHelp(): void {
+  console.log(`
+HoloFi Protocol - Role Management CLI
+======================================
+
+Usage:
+  npx hardhat run scripts/manage-roles.ts --network <network> -- <action> <target_address> [role_name] [acm_address]
+
+Actions:
+  check | list | view     View all role assignments and KYB status for target address
+  grant | add             Grant a role to target address
+  revoke | remove         Revoke a role from target address
+
+Supported Roles & Aliases:
+  DEFAULT_ADMIN_ROLE      DEFAULT_ADMIN, default_admin, root, zero, 0x0000...
+  ADMIN_ROLE              ADMIN, admin
+  ORACLE_ROLE             ORACLE, oracle, feeder, price_feeder
+  MINTER_ROLE             MINTER, minter
+  KYB_MANAGER_ROLE        KYB_MANAGER, kyb_manager, kyb
+  PAUSER_ROLE             PAUSER, pauser
+  <bytes32>               Direct hex role hash (e.g. 0xdf8b4c520...)
+
+Examples:
+  npx hardhat run scripts/manage-roles.ts --network localhost -- check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  npx hardhat run scripts/manage-roles.ts --network localhost -- grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 ORACLE_ROLE
+  npx hardhat run scripts/manage-roles.ts --network localhost -- revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 oracle
+  npx hardhat run scripts/manage-roles.ts --network baseSepolia -- check 0x... 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B
+`);
+}
+
+/**
+ * Main CLI execution entrypoint.
+ */
+export async function main(): Promise<void> {
+  const args = parseCliArgs();
+
+  if (args.help || !args.action) {
+    printHelp();
+    return;
+  }
+
+  const { ethers: hhEthers } = await network.connect();
+  const signers = await hhEthers.getSigners();
+  const signer = signers.length > 0 ? signers[0] : null;
+  const provider = signer ? signer.provider : hhEthers.provider;
+
+  if (!provider) {
+    throw new Error("Unable to establish provider connection to current network.");
+  }
+
+  if (!args.targetAddress || !ethers.isAddress(args.targetAddress)) {
+    console.error(`\n[ERROR] Invalid or missing target address: "${args.targetAddress}"`);
+    printHelp();
+    process.exit(1);
+  }
+
+  const acmAddress = await resolveAcmAddress(provider, args.acmAddress);
+  const acm = getAcmContract(acmAddress, signer || provider);
+
+  switch (args.action) {
+    case "check":
+    case "list":
+    case "view":
+    case "status": {
+      const result = await checkRoles(acm, args.targetAddress);
+      console.log("\n" + formatRoleTable(result) + "\n");
+      break;
+    }
+    case "grant":
+    case "add": {
+      if (!args.roleName) {
+        console.error("\n[ERROR] Role name or hash is required for grant action.");
+        printHelp();
+        process.exit(1);
+      }
+      if (!signer) {
+        console.error("\n[ERROR] Signer is required to execute grant transaction.");
+        process.exit(1);
+      }
+      await grantRole(acm, signer, args.targetAddress, args.roleName);
+      const result = await checkRoles(acm, args.targetAddress);
+      console.log("\nUpdated Role Status:\n" + formatRoleTable(result) + "\n");
+      break;
+    }
+    case "revoke":
+    case "remove": {
+      if (!args.roleName) {
+        console.error("\n[ERROR] Role name or hash is required for revoke action.");
+        printHelp();
+        process.exit(1);
+      }
+      if (!signer) {
+        console.error("\n[ERROR] Signer is required to execute revoke transaction.");
+        process.exit(1);
+      }
+      await revokeRole(acm, signer, args.targetAddress, args.roleName);
+      const result = await checkRoles(acm, args.targetAddress);
+      console.log("\nUpdated Role Status:\n" + formatRoleTable(result) + "\n");
+      break;
+    }
+    default: {
+      console.error(`\n[ERROR] Unknown action "${args.action}".`);
+      printHelp();
+      process.exit(1);
+    }
+  }
+}
+
+// Auto-run if executed directly as CLI script
+const isDirectScriptExecution =
+  process.argv.some(
+    (arg) => arg.includes("manage-roles.ts") || arg.includes("manage-roles.js")
+  ) && !process.env.npm_lifecycle_event?.includes("test");
+
+if (isDirectScriptExecution) {
+  main().catch((error) => {
+    console.error("\n[FATAL ERROR]:", error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}
