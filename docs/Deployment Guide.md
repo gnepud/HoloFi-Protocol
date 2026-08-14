@@ -105,3 +105,85 @@ The automated verification test suite verifies contract interconnectivity state 
 ```bash
 npx hardhat build && npx tsc --noEmit && npx hardhat test
 ```
+
+---
+
+## 4. Role Permissions Management (`scripts/manage-roles.ts`)
+
+The HoloFi protocol includes an operator CLI tool located at [`scripts/manage-roles.ts`](../scripts/manage-roles.ts) to inspect, grant, and revoke protocol roles on `AccessControlManager.sol`.
+
+### Command Syntax
+
+```bash
+npx hardhat run scripts/manage-roles.ts --network <network> -- <action> <target_address> [role_name] [acm_address]
+```
+
+### Supported Actions
+
+| Action | Description | Example |
+| :--- | :--- | :--- |
+| `check` / `list` / `view` | Inspect all role assignments and KYB status for an address | `check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
+| `grant` / `add` | Grant a role to the target address | `grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 ORACLE_ROLE` |
+| `revoke` / `remove` | Revoke a role from the target address | `revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter` |
+
+### Address Resolution Precedence
+
+The script automatically detects the `AccessControlManager` contract address in the following order:
+1. **Positional / Flag Argument**: Pass ACM address directly via CLI argument or `--acm <address>`.
+2. **Environment Variable**: `ACM_ADDRESS` or `ACCESS_CONTROL_MANAGER_ADDRESS`.
+3. **Ignition Deployments**: Auto-discovered from `ignition/deployments/chain-<chainId>/deployed_addresses.json` or root `deployed_addresses.json`.
+
+### Supported Roles & Case-Insensitive Aliases
+
+| Canonical Role Name | Supported Aliases | Role Description |
+| :--- | :--- | :--- |
+| `DEFAULT_ADMIN_ROLE` | `root`, `zero`, `default_admin`, `0x000...` | Root admin capable of assigning any role |
+| `ADMIN_ROLE` | `admin`, `ADMIN` | Protocol parameter administration |
+| `ORACLE_ROLE` | `oracle`, `feeder`, `price_feeder` | Updates card Fair Market Values (FMVs) in PriceFeed |
+| `MINTER_ROLE` | `minter`, `MINTER` | Mints and locks Vault Card NFTs |
+| `KYB_MANAGER_ROLE` | `kyb`, `kyb_manager` | Authorizes merchant stores via KYB approval |
+| `PAUSER_ROLE` | `pauser`, `PAUSER` | Circuit breaker pause operator |
+| `<bytes32 hex>` | `0x...` | Any raw 32-byte role identifier hash |
+
+### Operator Examples
+
+#### 1. Inspect Role Status
+```bash
+npx hardhat run scripts/manage-roles.ts --network localhost -- check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+```
+
+Output:
+```text
+================================================================================
+                       HoloFi AccessControlManager Status                       
+================================================================================
+Target Address : 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+ACM Address    : 0x5FbDB2315678afecb367f032d93F642f64180aa3
+KYB Approved   : YES [APPROVED]
+--------------------------------------------------------------------------------
+ROLE NAME               | ROLE HASH                                    | STATUS
+------------------------+----------------------------------------------+----------
+DEFAULT_ADMIN_ROLE      | 0x0000000000000000000000000000000000000000...| [GRANTED]
+ADMIN_ROLE              | 0xa49807205ce4d355092ef5a8a18f56e8913cf4a2...| [GRANTED]
+ORACLE_ROLE             | 0x8df622c366632f056d68636eb623e1bed4020c6a...| [NOT GRANTED]
+MINTER_ROLE             | 0x9f2df0fed2c77648de5860a4cc508cd0818c85b8...| [NOT GRANTED]
+KYB_MANAGER_ROLE        | 0x6e2df1b9ecf16f5c0938ff7b715694a974b971a8...| [NOT GRANTED]
+PAUSER_ROLE             | 0x65d78846734c5e962901ac9b426d21f5f49e242a...| [NOT GRANTED]
+================================================================================
+```
+
+#### 2. Grant Oracle Role to Feeder Wallet
+```bash
+npx hardhat run scripts/manage-roles.ts --network localhost -- grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 oracle
+```
+
+#### 3. Revoke Minter Role
+```bash
+npx hardhat run scripts/manage-roles.ts --network localhost -- revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter
+```
+
+#### 4. Specify Custom ACM Address on Testnet
+```bash
+npx hardhat run scripts/manage-roles.ts --network baseSepolia -- check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B
+```
+
