@@ -114,17 +114,25 @@ The HoloFi protocol includes an operator CLI tool located at [`scripts/manage-ro
 
 ### Command Syntax
 
+#### Method A: Direct CLI Execution (Recommended)
 ```bash
-npx hardhat run scripts/manage-roles.ts --network <network> -- <action> <target_address> [role_name] [acm_address]
+npm run roles <action> <target_address> [role_name] [acm_address] [--network <network>]
+# or
+npx tsx scripts/manage-roles.ts <action> <target_address> [role_name] [acm_address] [--network <network>]
+```
+
+#### Method B: Hardhat Run with Environment Variables
+```bash
+ACTION=<action> ACCOUNT=<target_address> [ROLE=<role_name>] npx hardhat run scripts/manage-roles.ts --network <network>
 ```
 
 ### Supported Actions
 
 | Action | Description | Example |
 | :--- | :--- | :--- |
-| `check` / `list` / `view` | Inspect all role assignments and KYB status for an address | `check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
-| `grant` / `add` | Grant a role to the target address | `grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 ORACLE_ROLE` |
-| `revoke` / `remove` | Revoke a role from the target address | `revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter` |
+| `check` / `list` / `view` | Inspect all role assignments and KYB status for an address | `npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
+| `grant` / `add` | Grant a role to the target address | `npm run roles grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 ORACLE_ROLE` |
+| `revoke` / `remove` | Revoke a role from the target address | `npm run roles revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter` |
 
 ### Address Resolution Precedence
 
@@ -149,7 +157,9 @@ The script automatically detects the `AccessControlManager` contract address in 
 
 #### 1. Inspect Role Status
 ```bash
-npx hardhat run scripts/manage-roles.ts --network localhost -- check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+# or with Hardhat run:
+ACTION=check ACCOUNT=0x70997970C51812dc3A010C7d01b50e0d17dc79C8 npx hardhat run scripts/manage-roles.ts --network localhost
 ```
 
 Output:
@@ -174,16 +184,16 @@ PAUSER_ROLE             | 0x65d78846734c5e962901ac9b426d21f5f49e242a...| [NOT GR
 
 #### 2. Grant Oracle Role to Feeder Wallet
 ```bash
-npx hardhat run scripts/manage-roles.ts --network localhost -- grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 oracle
+npm run roles grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 oracle
 ```
 
 #### 3. Revoke Minter Role
 ```bash
-npx hardhat run scripts/manage-roles.ts --network localhost -- revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter
+npm run roles revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter
 ```
 
 #### 4. Specify Custom ACM Address on Testnet
 ```bash
-npx hardhat run scripts/manage-roles.ts --network baseSepolia -- check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B
+npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B --network baseSepolia
 ```
 

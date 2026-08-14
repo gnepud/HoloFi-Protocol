@@ -461,6 +461,29 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
     }
   }
 
+  // Fallback to environment variables if not provided via CLI
+  if (!result.action && process.env.ACTION) {
+    result.action = process.env.ACTION.trim().toLowerCase();
+  }
+  if (!result.targetAddress) {
+    const envTarget = process.env.ACCOUNT || process.env.TARGET || process.env.WALLET || process.env.TARGET_ADDRESS;
+    if (envTarget) {
+      result.targetAddress = envTarget.trim();
+    }
+  }
+  if (!result.roleName) {
+    const envRole = process.env.ROLE || process.env.ROLE_NAME;
+    if (envRole) {
+      result.roleName = envRole.trim();
+    }
+  }
+  if (!result.acmAddress) {
+    const envAcm = process.env.ACM_ADDRESS || process.env.ACCESS_CONTROL_MANAGER_ADDRESS;
+    if (envAcm) {
+      result.acmAddress = envAcm.trim();
+    }
+  }
+
   return result;
 }
 

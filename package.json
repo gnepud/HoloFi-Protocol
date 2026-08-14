@@ -2,6 +2,11 @@
   "name": "holofi_protocol",
   "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "roles": "tsx scripts/manage-roles.ts",
+    "test": "hardhat test",
+    "build": "hardhat build"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.0.15",
     "@nomicfoundation/hardhat-ignition": "^3.1.8",
@@ -15,6 +20,7 @@
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
     "hardhat": "^3.12.0",
     "mocha": "^11.7.6",
+    "tsx": "^4.19.3",
     "typescript": "~6.0.3"
   },
   "dependencies": {
