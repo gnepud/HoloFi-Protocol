@@ -52,6 +52,7 @@ export interface ParsedCliArgs {
   action?: string;
   targetAddress?: string;
   roleName?: string;
+  statusValue?: boolean;
   acmAddress?: string;
   networkName?: string;
   help?: boolean;
@@ -113,6 +114,36 @@ export function getRoleNameFromHash(hash: string): string {
     }
   }
   return hash;
+}
+
+/**
+ * Parse a boolean status string with human-friendly aliases.
+ */
+export function parseBooleanStatus(input: string): boolean {
+  const normalized = input.trim().toLowerCase();
+  switch (normalized) {
+    case "true":
+    case "1":
+    case "approve":
+    case "approved":
+    case "pass":
+    case "yes":
+    case "enable":
+      return true;
+    case "false":
+    case "0":
+    case "revoke":
+    case "revoked":
+    case "reject":
+    case "rejected":
+    case "no":
+    case "disable":
+      return false;
+    default:
+      throw new Error(
+        `Invalid status "${input}". Accepted values: true, false, 1, 0, approve, approved, reject, rejected, pass, revoke, revoked, yes, no, enable, disable.`
+      );
+  }
 }
 
 /**
@@ -372,6 +403,51 @@ export async function revokeRole(
 }
 
 /**
+ * Update KYC/KYB compliance status for a target address.
+ */
+export async function setKybStatus(
+  acm: ethers.Contract,
+  signer: ethers.Signer,
+  targetAddress: string,
+  status: boolean
+): Promise<ethers.ContractTransactionReceipt | null> {
+  const checksumTarget = ethers.getAddress(targetAddress);
+  const currentStatus = (await acm.isKybApproved(checksumTarget)) as boolean;
+  if (currentStatus === status) {
+    console.log(
+      `[INFO] Target ${checksumTarget} already has KYB status set to ${status ? "APPROVED (true)" : "REVOKED (false)"}.`
+    );
+    return null;
+  }
+
+  const kybManagerRole = ethers.id("KYB_MANAGER_ROLE");
+  const adminRole = ethers.id("ADMIN_ROLE");
+  const signerAddress = await signer.getAddress();
+
+  const hasKybManager = (await acm.hasRole(kybManagerRole, signerAddress)) as boolean;
+  const hasAdmin = (await acm.hasRole(adminRole, signerAddress)) as boolean;
+
+  if (!hasKybManager && !hasAdmin) {
+    throw new Error(
+      `Signer ${signerAddress} does not have required KYB_MANAGER_ROLE or ADMIN_ROLE to update KYB status.`
+    );
+  }
+
+  console.log(`Submitting setKybStatus(${checksumTarget}, ${status})...`);
+  const connectedAcm = acm.connect(signer) as ethers.Contract;
+  const tx = (await connectedAcm.setKybStatus(checksumTarget, status)) as ethers.ContractTransactionResponse;
+  console.log(`Transaction submitted: ${tx.hash}`);
+
+  const receipt = await tx.wait();
+  console.log(`Transaction confirmed in block: ${receipt?.blockNumber ?? "unknown"}`);
+  console.log(
+    `[SUCCESS] KYB status for ${checksumTarget} successfully updated to ${status ? "APPROVED (true)" : "REVOKED (false)"}.`
+  );
+
+  return receipt;
+}
+
+/**
  * Parse CLI arguments from process.argv.
  */
 export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
@@ -465,6 +541,20 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
     if (positional.length > 3 && !result.acmAddress && ethers.isAddress(positional[3])) {
       result.acmAddress = positional[3];
     }
+  } else if (
+    result.action === "kyb" ||
+    result.action === "kyc" ||
+    result.action === "set-kyb" ||
+    result.action === "set-kyc" ||
+    result.action === "setkyb" ||
+    result.action === "setkyc"
+  ) {
+    if (positional.length > 2) {
+      result.statusValue = parseBooleanStatus(positional[2]);
+    }
+    if (positional.length > 3 && !result.acmAddress && ethers.isAddress(positional[3])) {
+      result.acmAddress = positional[3];
+    }
   }
 
   // Fallback to environment variables if not provided via CLI
@@ -483,6 +573,12 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
       result.roleName = envRole.trim();
     }
   }
+  if (result.statusValue === undefined) {
+    const envStatus = process.env.STATUS || process.env.KYB_STATUS || process.env.KYC_STATUS;
+    if (envStatus !== undefined && envStatus !== "") {
+      result.statusValue = parseBooleanStatus(envStatus);
+    }
+  }
   if (!result.acmAddress) {
     const envAcm = process.env.ACM_ADDRESS || process.env.ACCESS_CONTROL_MANAGER_ADDRESS;
     if (envAcm) {
@@ -498,20 +594,21 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
 
 export function printHelp(): void {
   console.log(`
-HoloFi Protocol - Role Permissions Management CLI
-==================================================
+HoloFi Protocol - Role & KYC/KYB Permissions Management CLI
+============================================================
 
 Usage:
-  npm run roles <action> <target_address> [role_name] [acm_address] [--network <network>]
+  npm run roles <action> <target_address> [role_name | status] [acm_address] [--network <network>]
   # or
-  npx tsx scripts/manage-roles.ts <action> <target_address> [role_name] [acm_address] [--network <network>]
+  npx tsx scripts/manage-roles.ts <action> <target_address> [role_name | status] [acm_address] [--network <network>]
   # or with Hardhat run:
-  ACTION=<action> ACCOUNT=<target_address> [ROLE=<role_name>] npx hardhat run scripts/manage-roles.ts --network <network>
+  ACTION=<action> ACCOUNT=<target_address> [ROLE=<role_name>] [STATUS=<status>] npx hardhat run scripts/manage-roles.ts --network <network>
 
 Actions:
   check | list | view     View all role assignments and KYB status for target address
   grant | add             Grant a role to target address
   revoke | remove         Revoke a role from target address
+  kyb | kyc | set-kyb     Set KYC/KYB compliance status for target address (true/false/approve/reject)
 
 Supported Roles & Aliases (case-insensitive):
   ADMIN_ROLE              admin, ADMIN
@@ -522,11 +619,17 @@ Supported Roles & Aliases (case-insensitive):
   DEFAULT_ADMIN_ROLE      default_admin, root, zero, 0x0000...
   <bytes32>               Direct hex role hash (e.g. 0xdf8b4c520...)
 
+Status Values & Aliases:
+  Enable / Approve:       true, 1, approve, approved, pass, yes, enable
+  Disable / Reject:       false, 0, revoke, revoked, reject, rejected, no, disable
+
 Examples:
   npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
   npm run roles grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 MINTER_ROLE
   npm run roles grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 oracle
   npm run roles revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter
+  npm run roles kyb 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 approve
+  npm run roles kyc 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 reject
   npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --network sepolia
 `);
 }
@@ -621,6 +724,26 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       await revokeRole(acm, signer, args.targetAddress, args.roleName);
+      const result = await checkRoles(acm, args.targetAddress);
+      console.log("\nUpdated Role Status:\n" + formatRoleTable(result) + "\n");
+      break;
+    }
+    case "kyb":
+    case "kyc":
+    case "set-kyb":
+    case "set-kyc":
+    case "setkyb":
+    case "setkyc": {
+      if (args.statusValue === undefined) {
+        console.error("\n[ERROR] Status value (e.g. true/false/approve/reject) is required for KYC/KYB action.");
+        printHelp();
+        process.exit(1);
+      }
+      if (!signer) {
+        console.error("\n[ERROR] Signer is required to execute KYC/KYB update transaction on network \"" + targetNetwork + "\".");
+        process.exit(1);
+      }
+      await setKybStatus(acm, signer, args.targetAddress, args.statusValue);
       const result = await checkRoles(acm, args.targetAddress);
       console.log("\nUpdated Role Status:\n" + formatRoleTable(result) + "\n");
       break;
