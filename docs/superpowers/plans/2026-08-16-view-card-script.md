@@ -25,20 +25,20 @@
 **Interfaces:**
 - Produces: `fetchCardDetails(vaultCard, tokenId, priceFeed?)`, `formatCardDetailsTable(details)`, `parseCliArgs()`, `resolveVaultCardAddress()`.
 
-- [ ] **Step 1: Create `scripts/view-card.ts`**
+- [x] **Step 1: Create `scripts/view-card.ts`**
 
 Implement CLI argument parsing, address resolution, `fetchCardDetails`, `formatCardDetailsTable`, `printHelp`, and `main`.
 
-- [ ] **Step 2: Update `package.json`**
+- [x] **Step 2: Update `package.json`**
 
 Add `"view-card": "tsx scripts/view-card.ts"` to `scripts`.
 
-- [ ] **Step 3: Verify compilation and typecheck**
+- [x] **Step 3: Verify compilation and typecheck**
 
 Run: `npx hardhat build && npx tsc --noEmit`
 Expected: PASS cleanly.
 
-- [ ] **Step 4: Commit Task 1**
+- [x] **Step 4: Commit Task 1**
 
 ```bash
 git add scripts/view-card.ts package.json
@@ -56,20 +56,20 @@ git commit -m "feat: implement view-card CLI script for HoloFiVaultCard metadata
 **Interfaces:**
 - Produces: Integration tests for card inspection and updated documentation.
 
-- [ ] **Step 1: Create `test/ViewCardScript.ts`**
+- [x] **Step 1: Create `test/ViewCardScript.ts`**
 
 Write integration tests validating argument parsing, card detail fetching across lifecycle states (minted, locked, burned), and ASCII table formatting.
 
-- [ ] **Step 2: Update `docs/Deployment Guide.md`**
+- [x] **Step 2: Update `docs/Deployment Guide.md`**
 
 Add Section 5 detailing how to query card NFT details using `npm run view-card`.
 
-- [ ] **Step 3: Run full verification suite**
+- [x] **Step 3: Run full verification suite**
 
 Run: `npx hardhat build && npx tsc --noEmit && npx hardhat test`
 Expected: PASS cleanly (210+ total tests).
 
-- [ ] **Step 4: Commit Task 2**
+- [x] **Step 4: Commit Task 2**
 
 ```bash
 git add test/ViewCardScript.ts "docs/Deployment Guide.md"
