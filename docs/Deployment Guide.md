@@ -108,22 +108,22 @@ npx hardhat build && npx tsc --noEmit && npx hardhat test
 
 ---
 
-## 4. Role Permissions Management (`scripts/manage-roles.ts`)
+## 4. Role & KYC/KYB Permissions Management (`scripts/manage-roles.ts`)
 
-The HoloFi protocol includes an operator CLI tool located at [`scripts/manage-roles.ts`](../scripts/manage-roles.ts) to inspect, grant, and revoke protocol roles on `AccessControlManager.sol`.
+The HoloFi protocol includes an operator CLI tool located at [`scripts/manage-roles.ts`](../scripts/manage-roles.ts) to inspect, grant, and revoke protocol roles as well as manage merchant store KYC/KYB compliance status on `AccessControlManager.sol`.
 
 ### Command Syntax
 
 #### Method A: Direct CLI Execution (Recommended)
 ```bash
-npm run roles <action> <target_address> [role_name] [acm_address] [--network <network>]
+npm run roles <action> <target_address> [role_name | status] [acm_address] [--network <network>]
 # or
-npx tsx scripts/manage-roles.ts <action> <target_address> [role_name] [acm_address] [--network <network>]
+npx tsx scripts/manage-roles.ts <action> <target_address> [role_name | status] [acm_address] [--network <network>]
 ```
 
 #### Method B: Hardhat Run with Environment Variables
 ```bash
-ACTION=<action> ACCOUNT=<target_address> [ROLE=<role_name>] npx hardhat run scripts/manage-roles.ts --network <network>
+ACTION=<action> ACCOUNT=<target_address> [ROLE=<role_name>] [STATUS=<status>] npx hardhat run scripts/manage-roles.ts --network <network>
 ```
 
 ### Supported Actions
@@ -133,6 +133,7 @@ ACTION=<action> ACCOUNT=<target_address> [ROLE=<role_name>] npx hardhat run scri
 | `check` / `list` / `view` | Inspect all role assignments and KYB status for an address | `npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
 | `grant` / `add` | Grant a role to the target address | `npm run roles grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 ORACLE_ROLE` |
 | `revoke` / `remove` | Revoke a role from the target address | `npm run roles revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter` |
+| `kyb` / `kyc` / `set-kyb` | Set KYC/KYB compliance approval status for target address | `npm run roles kyb 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 approve` |
 
 ### Address Resolution Precedence
 
@@ -152,6 +153,13 @@ The script automatically detects the `AccessControlManager` contract address in 
 | `KYB_MANAGER_ROLE` | `kyb`, `kyb_manager` | Authorizes merchant stores via KYB approval |
 | `PAUSER_ROLE` | `pauser`, `PAUSER` | Circuit breaker pause operator |
 | `<bytes32 hex>` | `0x...` | Any raw 32-byte role identifier hash |
+
+### Supported KYC/KYB Status Values & Aliases
+
+| Desired Status | Accepted Values / Aliases (case-insensitive) |
+| :--- | :--- |
+| **Approved / Enabled (`true`)** | `true`, `1`, `approve`, `approved`, `pass`, `yes`, `enable` |
+| **Revoked / Disabled (`false`)** | `false`, `0`, `revoke`, `revoked`, `reject`, `rejected`, `no`, `disable` |
 
 ### Operator Examples
 
@@ -192,8 +200,23 @@ npm run roles grant 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 oracle
 npm run roles revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter
 ```
 
-#### 4. Specify Custom ACM Address on Testnet
+#### 4. Approve Merchant KYC/KYB Status
+```bash
+npm run roles kyb 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 approve
+# or with kyc alias:
+npm run roles kyc 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 enable
+```
+
+#### 5. Revoke Merchant KYC/KYB Status
+```bash
+npm run roles kyb 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 reject
+# or
+npm run roles kyc 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 revoke
+```
+
+#### 6. Specify Custom ACM Address on Testnet
 ```bash
 npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B --network baseSepolia
 ```
+
 

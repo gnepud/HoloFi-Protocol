@@ -3,6 +3,7 @@ import { ethers as ethersLib } from "ethers";
 import { network } from "hardhat";
 import {
   parseCliArgs,
+  parseBooleanStatus,
   resolveRoleHash,
   getRoleNameFromHash,
   resolveAcmAddress,
@@ -11,6 +12,7 @@ import {
   formatRoleTable,
   grantRole,
   revokeRole,
+  setKybStatus,
   KNOWN_ROLES,
 } from "../scripts/manage-roles.js";
 
@@ -101,12 +103,114 @@ describe("ManageRoles CLI Script Integration Tests", function () {
       expect(parsed.help).to.be.true;
     });
 
+    it("Should parse 'kyb' action with boolean status alias", function () {
+      const target = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+      const parsed = parseCliArgs(["node", "manage-roles.ts", "kyb", target, "approve"]);
+      expect(parsed.action).to.equal("kyb");
+      expect(parsed.targetAddress).to.equal(target);
+      expect(parsed.statusValue).to.be.true;
+    });
+
+    it("Should parse 'kyc' action with boolean status alias", function () {
+      const target = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+      const parsed = parseCliArgs(["node", "manage-roles.ts", "kyc", target, "reject"]);
+      expect(parsed.action).to.equal("kyc");
+      expect(parsed.targetAddress).to.equal(target);
+      expect(parsed.statusValue).to.be.false;
+    });
+
+    it("Should parse 'set-kyb' action with custom ACM address", function () {
+      const target = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+      const customAcm = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+      const parsed = parseCliArgs(["node", "manage-roles.ts", "set-kyb", target, "true", customAcm]);
+      expect(parsed.action).to.equal("set-kyb");
+      expect(parsed.targetAddress).to.equal(target);
+      expect(parsed.statusValue).to.be.true;
+      expect(parsed.acmAddress).to.equal(customAcm);
+    });
+
+    it("Should parse status value from environment variable", function () {
+      const target = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+      process.env.ACTION = "kyb";
+      process.env.ACCOUNT = target;
+      process.env.STATUS = "enable";
+      try {
+        const parsed = parseCliArgs(["node", "manage-roles.ts"]);
+        expect(parsed.action).to.equal("kyb");
+        expect(parsed.targetAddress).to.equal(target);
+        expect(parsed.statusValue).to.be.true;
+      } finally {
+        delete process.env.ACTION;
+        delete process.env.ACCOUNT;
+        delete process.env.STATUS;
+      }
+    });
+
     it("Should parse --network flag", function () {
       const target = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
       const parsed = parseCliArgs(["node", "manage-roles.ts", "check", target, "--network", "sepolia"]);
       expect(parsed.action).to.equal("check");
       expect(parsed.targetAddress).to.equal(target);
       expect(parsed.networkName).to.equal("sepolia");
+    });
+  });
+
+  describe("parseBooleanStatus", function () {
+    it("Should correctly parse all truthy boolean aliases", function () {
+      const truthyAliases = [
+        "true",
+        "TRUE",
+        "True",
+        " 1 ",
+        "approve",
+        "APPROVE",
+        "Approve",
+        "approved",
+        "APPROVED",
+        "pass",
+        "PASS",
+        "yes",
+        "YES",
+        "enable",
+        "ENABLE",
+      ];
+      for (const alias of truthyAliases) {
+        expect(parseBooleanStatus(alias), `Failed for alias: ${alias}`).to.be.true;
+      }
+    });
+
+    it("Should correctly parse all falsy boolean aliases", function () {
+      const falsyAliases = [
+        "false",
+        "FALSE",
+        "False",
+        " 0 ",
+        "revoke",
+        "REVOKE",
+        "revoked",
+        "REVOKED",
+        "reject",
+        "REJECT",
+        "rejected",
+        "REJECTED",
+        "no",
+        "NO",
+        "disable",
+        "DISABLE",
+      ];
+      for (const alias of falsyAliases) {
+        expect(parseBooleanStatus(alias), `Failed for alias: ${alias}`).to.be.false;
+      }
+    });
+
+    it("Should throw for invalid status strings", function () {
+      const invalidInputs = ["invalid", "maybe", "2", "-1", "active", "pending", ""];
+      for (const input of invalidInputs) {
+        expect(
+          () => parseBooleanStatus(input),
+          `Expected parseBooleanStatus("${input}") to throw`
+        ).to.throw("Invalid status");
+      }
     });
   });
 
@@ -304,6 +408,68 @@ describe("ManageRoles CLI Script Integration Tests", function () {
         expect(err.message).to.include("does not have required admin role");
       }
       expect(revokeThrew, "Expected revokeRole to throw for unauthorized signer").to.be.true;
+    });
+  });
+
+  describe("setKybStatus helper", function () {
+    it("Should allow admin to approve and revoke KYB status with idempotency", async function () {
+      const { acm, admin, user } = await networkHelpers.loadFixture(deployAcmFixture);
+      const acmContract = getAcmContract(await acm.getAddress(), ethers.provider);
+
+      // 1. Initial status is false
+      let check = await checkRoles(acmContract, user.address);
+      expect(check.isKybApproved).to.be.false;
+
+      // 2. Admin sets KYB status to true (approve)
+      const receipt1 = await setKybStatus(acmContract, admin, user.address, true);
+      expect(receipt1).to.not.be.null;
+
+      check = await checkRoles(acmContract, user.address);
+      expect(check.isKybApproved).to.be.true;
+
+      // 3. Setting status to true again is idempotent (returns null)
+      const noop = await setKybStatus(acmContract, admin, user.address, true);
+      expect(noop).to.be.null;
+
+      // 4. Admin sets KYB status back to false (revoke)
+      const receipt2 = await setKybStatus(acmContract, admin, user.address, false);
+      expect(receipt2).to.not.be.null;
+
+      check = await checkRoles(acmContract, user.address);
+      expect(check.isKybApproved).to.be.false;
+
+      // 5. Setting status to false again is idempotent (returns null)
+      const noop2 = await setKybStatus(acmContract, admin, user.address, false);
+      expect(noop2).to.be.null;
+    });
+
+    it("Should allow account with KYB_MANAGER_ROLE to update KYB status", async function () {
+      const { acm, admin, operator, user } = await networkHelpers.loadFixture(deployAcmFixture);
+      const acmContract = getAcmContract(await acm.getAddress(), ethers.provider);
+
+      // Grant KYB_MANAGER_ROLE to operator
+      await grantRole(acmContract, admin, operator.address, "KYB_MANAGER_ROLE");
+
+      // Operator updates KYB status for user to true
+      const receipt = await setKybStatus(acmContract, operator, user.address, true);
+      expect(receipt).to.not.be.null;
+
+      const check = await checkRoles(acmContract, user.address);
+      expect(check.isKybApproved).to.be.true;
+    });
+
+    it("Should throw error if unauthorized signer attempts setKybStatus", async function () {
+      const { acm, user, operator } = await networkHelpers.loadFixture(deployAcmFixture);
+      const acmContract = getAcmContract(await acm.getAddress(), ethers.provider);
+
+      let threw = false;
+      try {
+        await setKybStatus(acmContract, operator, user.address, true);
+      } catch (err: any) {
+        threw = true;
+        expect(err.message).to.include("does not have required KYB_MANAGER_ROLE or ADMIN_ROLE");
+      }
+      expect(threw, "Expected setKybStatus to throw for unauthorized caller").to.be.true;
     });
   });
 
