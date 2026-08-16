@@ -453,9 +453,9 @@ export async function resolvePriceFeedAddress(
  * Fetch full card details from contract and optional price feed.
  */
 export async function fetchCardDetails(
-  vaultCard: ethers.Contract,
+  vaultCard: ethers.Contract | ethers.BaseContract | any,
   tokenId: bigint | number,
-  priceFeed?: ethers.Contract | null
+  priceFeed?: ethers.Contract | ethers.BaseContract | any | null
 ): Promise<CardDetails> {
   const id = BigInt(tokenId);
   const contractAddress = await vaultCard.getAddress();

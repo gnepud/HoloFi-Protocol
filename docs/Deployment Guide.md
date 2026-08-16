@@ -219,4 +219,108 @@ npm run roles kyc 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 revoke
 npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B --network baseSepolia
 ```
 
+---
+
+## 5. Vault Card NFT Details Viewer (`scripts/view-card.ts`)
+
+The HoloFi protocol includes a dedicated NFT inspection CLI tool located at [`scripts/view-card.ts`](../scripts/view-card.ts) to query on-chain card attributes, physical vault attestation hashes, collateral lock status, and real-time Oracle Fair Market Value (FMV) valuations for any `HoloFiVaultCard` by token ID.
+
+### Command Syntax
+
+#### Method A: Direct CLI Execution (Recommended)
+```bash
+npm run view-card <tokenId> [vaultCardAddress] [options]
+# or
+npx tsx scripts/view-card.ts <tokenId> [vaultCardAddress] [options]
+```
+
+#### Method B: Hardhat Run with Environment Variables
+```bash
+TOKEN_ID=<tokenId> [VAULT_CARD_ADDRESS=<address>] [PRICE_FEED_ADDRESS=<address>] npx hardhat run scripts/view-card.ts --network <network>
+```
+
+### CLI Arguments & Options
+
+| Argument / Flag | Type | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `<tokenId>` | Positional / Required | Token ID of the vault card NFT | `npm run view-card 1` |
+| `[vaultCardAddress]` | Positional / Optional | Address of the `HoloFiVaultCard` contract | `npm run view-card 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9` |
+| `--contract`, `-c` | Option Flag | Specify `HoloFiVaultCard` contract address | `--contract 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9` |
+| `--price-feed`, `-p` | Option Flag | Specify `HoloFiCardPriceFeed` contract address | `--price-feed 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
+| `--network`, `-n` | Option Flag | Target RPC network (default: `localhost`) | `--network sepolia` |
+| `--help`, `-h` | Option Flag | Display usage information and examples | `npm run view-card --help` |
+
+### Address Resolution Precedence
+
+The script resolves `HoloFiVaultCard` and `HoloFiCardPriceFeed` addresses automatically using the following hierarchy:
+
+1. **CLI Arguments & Flags**: Direct positional arguments or `--contract` / `--price-feed` flags.
+2. **Environment Variables**: `VAULT_CARD_ADDRESS` (or `CARD_ADDRESS`, `CONTRACT_ADDRESS`) and `PRICE_FEED_ADDRESS` (or `FEED_ADDRESS`).
+3. **Ignition Deployments**: Auto-discovered from `ignition/deployments/chain-<chainId>/deployed_addresses.json` or root `deployed_addresses.json`.
+
+### Operator Examples
+
+#### 1. Inspect Token ID #1 (Auto-Resolved Contracts)
+```bash
+npm run view-card 1
+```
+
+Output:
+```text
+================================================================================
+                         HoloFi Vault Card NFT Metadata                         
+================================================================================
+Token ID           : 1
+Contract           : 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 (HoloFi TCG Cards - HFC)
+Owner Address      : 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+Lock Status        : UNLOCKED [Free / Transferable]
+Minted At          : 2026-08-16T12:00:00.000Z (Unix: 1786881600)
+Token URI          : ipfs://QmZtmD2qt8fJpq3CLDHheZAs6GLbmGL5Ux85GYxs9L83vW
+--------------------------------------------------------------------------------
+ASSET & ATTESTATION DETAILS
+--------------------------------------------------------------------------------
+Card Type ID       : 0x8b329f6b92a543f9a7217983c27e8a946cb32cf39db99c855a8264e107db32d3
+Attestation Hash   : 0x3d49f60e909a39f6044a30a109787ff8c5120689b9101b0f5ef22dcf1e70e28f
+--------------------------------------------------------------------------------
+ORACLE VALUATION (FMV)
+--------------------------------------------------------------------------------
+Price Feed         : 0x5FbDB2315678afecb367f032d93F642f64180aa3
+Fair Market Value  : $2,000.00 USD (2000.0 USD)
+Last Updated       : 2026-08-16T12:05:00.000Z (Unix: 1786881900)
+================================================================================
+```
+
+#### 2. Query Locked Card in Escrow
+```bash
+npm run view-card 2
+```
+
+Output:
+```text
+================================================================================
+                         HoloFi Vault Card NFT Metadata                         
+================================================================================
+Token ID           : 2
+Contract           : 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 (HoloFi TCG Cards - HFC)
+Owner Address      : 0x90F79bf6EB2c4f809663852283088995309d4123
+Lock Status        : LOCKED [In Escrow / Collateralized]
+...
+```
+
+#### 3. Inspect Card on Sepolia Testnet
+```bash
+npm run view-card 1 --network sepolia
+```
+
+#### 4. Explicit Contract and Price Feed Addresses
+```bash
+npm run view-card 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 --price-feed 0x5FbDB2315678afecb367f032d93F642f64180aa3
+```
+
+#### 5. Hardhat Runner Execution
+```bash
+TOKEN_ID=1 npx hardhat run scripts/view-card.ts --network localhost
+```
+
+
 
