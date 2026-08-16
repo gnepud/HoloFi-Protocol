@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "roles": "tsx scripts/manage-roles.ts",
+    "view-card": "tsx scripts/view-card.ts",
     "test": "hardhat test",
     "build": "hardhat build"
   },
