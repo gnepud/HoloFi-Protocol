@@ -1,6 +1,8 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 import DeployHoloFiProtocol from "./DeployHoloFiProtocol.js";
 
+const DEAD_ADDRESS = "0x000000000000000000000000000000000000dEaD";
+
 const DeployHoloFiLendingPoolWithMock = buildModule("DeployHoloFiLendingPoolWithMock", (m) => {
   const { poolFactory, loanCore } = m.useModule(DeployHoloFiProtocol);
 
@@ -24,7 +26,24 @@ const DeployHoloFiLendingPoolWithMock = buildModule("DeployHoloFiLendingPoolWith
 
   m.call(lendingPool, "setLoanCore", [loanCore]);
 
-  m.call(mockAsset, "mint", [poolAddress, mockMintAmount]);
+  const deployer = m.getAccount(0);
+
+  // Mint mock tokens to deployer
+  const mintToDeployerTx = m.call(mockAsset, "mint", [deployer, mockMintAmount], {
+    id: "mintMockInitialToDeployer",
+  });
+
+  // Approve lending pool to spend deployer's mock tokens
+  const approvePoolTx = m.call(mockAsset, "approve", [lendingPool, mockMintAmount], {
+    id: "approveLendingPoolInitialDeposit",
+    after: [mintToDeployerTx],
+  });
+
+  // Deposit initial seed liquidity, locking shares permanently at DEAD address
+  m.call(lendingPool, "deposit", [mockMintAmount, DEAD_ADDRESS], {
+    id: "depositSeedLiquidityToDeadAddress",
+    after: [approvePoolTx],
+  });
 
   return {
     lendingPool,

@@ -129,12 +129,27 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     const lendingPoolAddr = await lendingPool.getAddress();
     const mockAssetAddr = await mockAsset.getAddress();
     const loanCoreAddr = await loanCore.getAddress();
+    const DEAD_ADDRESS = "0x000000000000000000000000000000000000dEaD";
 
     expect(lendingPoolAddr).to.not.equal(ethers.ZeroAddress);
     expect(mockAssetAddr).to.not.equal(ethers.ZeroAddress);
     expect(await poolFactory.isValidPool(lendingPoolAddr)).to.be.true;
     expect(await (lendingPool as any).loanCore()).to.equal(loanCoreAddr);
     expect(await (mockAsset as any).balanceOf(lendingPoolAddr)).to.equal(1_000_000_000_000n);
+
+    // Verify ERC-4626 balanced accounting and locked seed liquidity
+    expect(await (lendingPool as any).totalAssets()).to.equal(1_000_000_000_000n);
+    expect(await (lendingPool as any).totalSupply()).to.equal(1_000_000_000_000n);
+    expect(await (lendingPool as any).balanceOf(DEAD_ADDRESS)).to.equal(1_000_000_000_000n);
+
+    // Verify subsequent user deposit receives exact 1:1 shares
+    const [_, __, ___, ____, lpUser] = await ethers.getSigners();
+    const userDepositAmount = 1_000_000_000n; // 1,000 EURC
+    await (mockAsset as any).mint(lpUser.address, userDepositAmount);
+    await (mockAsset as any).connect(lpUser).approve(lendingPoolAddr, userDepositAmount);
+    await (lendingPool as any).connect(lpUser).deposit(userDepositAmount, lpUser.address);
+
+    expect(await (lendingPool as any).balanceOf(lpUser.address)).to.equal(userDepositAmount);
   });
 
   it("Should deploy lending pool targeting an existing ERC20 asset via DeployHoloFiLendingPool", async function () {
