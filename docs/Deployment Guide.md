@@ -322,5 +322,112 @@ npm run view-card 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 --price-feed 0x5F
 TOKEN_ID=1 npx hardhat run scripts/view-card.ts --network localhost
 ```
 
+---
 
+## 6. Mock ERC20 Token Minting (`scripts/mint-mock-token.ts`)
 
+The HoloFi protocol includes a dedicated testing and operator CLI tool located at [`scripts/mint-mock-token.ts`](../scripts/mint-mock-token.ts) to mint `MockERC20` test tokens (e.g., Mock EURC with 6 decimals) to any specified wallet address and inspect balances across local development environments and testnets.
+
+### Command Syntax
+
+#### Method A: Direct CLI Execution (Recommended)
+```bash
+npm run mint-mock-token [action] <recipient_address> [amount] [token_address] [options]
+# or
+npx tsx scripts/mint-mock-token.ts [action] <recipient_address> [amount] [token_address] [options]
+```
+
+#### Method B: Hardhat Run with Environment Variables
+```bash
+[ACTION=<action>] ACCOUNT=<recipient_address> [AMOUNT=<amount>] [MOCK_ERC20_ADDRESS=<address>] npx hardhat run scripts/mint-mock-token.ts --network <network>
+```
+
+### Supported Actions
+
+| Action | Description | Example |
+| :--- | :--- | :--- |
+| `mint` / `add` (default) | Mint tokens to recipient address (default amount: `10000`) | `npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
+| `balance` / `check` / `view` | Inspect token balance for target address | `npm run mint-mock-token balance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
+
+### CLI Arguments & Options
+
+| Argument / Flag | Type | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `<recipient_address>` | Positional / Required | Target recipient or account address | `npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
+| `[amount]` | Positional / Optional | Human-readable token amount to mint (default: `10000`) | `npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 50000` |
+| `[token_address]` | Positional / Optional | Address of the `MockERC20` contract | `npm run mint-mock-token 0x7099... 1000 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
+| `--token`, `-t`, `--contract`, `-c` | Option Flag | Specify `MockERC20` contract address | `--token 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
+| `--amount`, `-a` | Option Flag | Specify token amount to mint | `--amount 25000` |
+| `--network`, `-n` | Option Flag | Target RPC network (default: `localhost`) | `--network sepolia` |
+| `--help`, `-h` | Option Flag | Display usage instructions and examples | `npm run mint-mock-token --help` |
+
+### Address Resolution Precedence
+
+The script automatically detects the `MockERC20` contract address in the following order:
+
+1. **Positional / Flag Argument**: Pass token address directly via CLI argument or `--token <address>`.
+2. **Environment Variable**: `MOCK_ERC20_ADDRESS`, `TOKEN_ADDRESS`, `MOCK_TOKEN_ADDRESS`, or `CONTRACT_ADDRESS`.
+3. **Ignition Deployments**: Auto-discovered from `ignition/deployments/chain-<chainId>/deployed_addresses.json` (e.g. `DeployHoloFiLendingPoolWithMock#MockERC20` entry) or root `deployed_addresses.json`.
+
+### Operator Examples
+
+#### 1. Mint Default 10,000 EURC to Recipient
+```bash
+npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+```
+
+Output:
+```text
+================================================================================
+                         MockERC20 Token Mint Summary                           
+================================================================================
+Recipient Address : 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+Token Address     : 0x5FbDB2315678afecb367f032d93F642f64180aa3 (Euro Coin - EURC)
+Decimals          : 6
+--------------------------------------------------------------------------------
+Minted Amount     : +10000 EURC (10000000000 base units)
+Initial Balance   : 0.0 EURC
+New Balance       : 10000.0 EURC
+--------------------------------------------------------------------------------
+Transaction Hash  : 0xb5f269a8b1c4e4776eec1020ddc98ff48f1082c3c9c99ec2426913e61a4ad19f
+Block Number      : 12
+================================================================================
+```
+
+#### 2. Mint Custom Amount (e.g. 50,000 EURC)
+```bash
+npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 50000
+```
+
+#### 3. Inspect Mock Token Balance
+```bash
+npm run mint-mock-token balance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+```
+
+Output:
+```text
+================================================================================
+                         MockERC20 Token Balance                                
+================================================================================
+Target Address    : 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+Token Address     : 0x5FbDB2315678afecb367f032d93F642f64180aa3 (Euro Coin - EURC)
+Decimals          : 6
+--------------------------------------------------------------------------------
+Balance           : 10000.0 EURC (10000000000 base units)
+================================================================================
+```
+
+#### 4. Mint Mock Tokens on Sepolia Testnet
+```bash
+npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 25000 --network sepolia
+```
+
+#### 5. Explicit Contract Address and Custom Amount
+```bash
+npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 10000 --token 0x5FbDB2315678afecb367f032d93F642f64180aa3
+```
+
+#### 6. Hardhat Runner Execution
+```bash
+ACCOUNT=0x70997970C51812dc3A010C7d01b50e0d17dc79C8 AMOUNT=10000 npx hardhat run scripts/mint-mock-token.ts --network localhost
+```
