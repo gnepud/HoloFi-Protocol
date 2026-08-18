@@ -7,20 +7,27 @@ import {
   formatCardDetailsTable,
   resolveVaultCardAddress,
   resolvePriceFeedAddress,
+  resolveLoanCoreAddress,
   VAULT_CARD_ABI,
   PRICE_FEED_ABI,
+  LOAN_CORE_ABI,
   type CardDetails,
+  type VaultLockInfo,
 } from "../scripts/view-card.js";
 
 const { ethers, networkHelpers } = await network.create();
 
 describe("ViewCard CLI Script Integration Tests", function () {
   async function deployProtocolFixture() {
-    const [owner, admin, minter, oracle, user, unauthorized] = await ethers.getSigners();
+    const [owner, admin, minter, oracle, user, unauthorized, store] =
+      await ethers.getSigners();
 
-    const acm = await ethers.deployContract("AccessControlManager", [admin.address]);
+    const acm = await ethers.deployContract("AccessControlManager", [
+      admin.address,
+    ]);
     const minterRole = await acm.MINTER_ROLE();
     const oracleRole = await acm.ORACLE_ROLE();
+    const adminRole = await acm.ADMIN_ROLE();
 
     await acm.connect(admin).grantRole(minterRole, minter.address);
     await acm.connect(admin).grantRole(oracleRole, oracle.address);
@@ -31,22 +38,47 @@ describe("ViewCard CLI Script Integration Tests", function () {
       await acm.getAddress(),
     ]);
 
-    const priceFeed = await ethers.deployContract("HoloFiCardPriceFeed", [await acm.getAddress()]);
+    const priceFeed = await ethers.deployContract("HoloFiCardPriceFeed", [
+      await acm.getAddress(),
+    ]);
 
-    const cardTypeId1 = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
-    const cardTypeId2 = ethers.keccak256(ethers.toUtf8Bytes("Pikachu_Illustrator"));
-    const attestationHash1 = ethers.keccak256(ethers.toUtf8Bytes("Blink:PSA:10:999"));
+    const poolFactory = await ethers.deployContract("HoloFiLendingPoolFactory", [
+      await acm.getAddress(),
+    ]);
+
+    const loanCore = await ethers.deployContract("HoloFiVaultLoanCore", [
+      await acm.getAddress(),
+      await vaultCard.getAddress(),
+      await poolFactory.getAddress(),
+      await priceFeed.getAddress(),
+    ]);
+
+    await acm.connect(admin).grantRole(adminRole, await loanCore.getAddress());
+    await acm.connect(admin).setKybStatus(store.address, true);
+
+    const cardTypeId1 = ethers.keccak256(
+      ethers.toUtf8Bytes("Charizard_1st_Edition")
+    );
+    const cardTypeId2 = ethers.keccak256(
+      ethers.toUtf8Bytes("Pikachu_Illustrator")
+    );
+    const attestationHash1 = ethers.keccak256(
+      ethers.toUtf8Bytes("Blink:PSA:10:999")
+    );
 
     return {
       acm,
       vaultCard,
       priceFeed,
+      poolFactory,
+      loanCore,
       owner,
       admin,
       minter,
       oracle,
       user,
       unauthorized,
+      store,
       cardTypeId1,
       cardTypeId2,
       attestationHash1,
@@ -64,6 +96,12 @@ describe("ViewCard CLI Script Integration Tests", function () {
     it("Should export valid PRICE_FEED_ABI", function () {
       expect(PRICE_FEED_ABI).to.be.an("array").that.is.not.empty;
       expect(PRICE_FEED_ABI.some((sig) => sig.includes("getPrice"))).to.be.true;
+    });
+
+    it("Should export valid LOAN_CORE_ABI", function () {
+      expect(LOAN_CORE_ABI).to.be.an("array").that.is.not.empty;
+      expect(LOAN_CORE_ABI.some((sig) => sig.includes("nftVaultId"))).to.be.true;
+      expect(LOAN_CORE_ABI.some((sig) => sig.includes("getVault"))).to.be.true;
     });
   });
 
@@ -137,6 +175,25 @@ describe("ViewCard CLI Script Integration Tests", function () {
       expect(p4.priceFeedAddress).to.equal(feedAddr);
     });
 
+    it("Should parse --loan-core, --loancore, and -l flags", function () {
+      const coreAddr = "0x90f79BF6Eb2c4F809663852283088995309D4123";
+
+      const p1 = parseCliArgs(["node", "view-card.ts", "1", "--loan-core", coreAddr]);
+      expect(p1.loanCoreAddress).to.equal(coreAddr);
+
+      const p2 = parseCliArgs(["node", "view-card.ts", "1", `--loan-core=${coreAddr}`]);
+      expect(p2.loanCoreAddress).to.equal(coreAddr);
+
+      const p3 = parseCliArgs(["node", "view-card.ts", "1", "--loancore", coreAddr]);
+      expect(p3.loanCoreAddress).to.equal(coreAddr);
+
+      const p4 = parseCliArgs(["node", "view-card.ts", "1", `--loancore=${coreAddr}`]);
+      expect(p4.loanCoreAddress).to.equal(coreAddr);
+
+      const p5 = parseCliArgs(["node", "view-card.ts", "1", "-l", coreAddr]);
+      expect(p5.loanCoreAddress).to.equal(coreAddr);
+    });
+
     it("Should parse --network and -n flags", function () {
       const p1 = parseCliArgs(["node", "view-card.ts", "1", "--network", "sepolia"]);
       expect(p1.networkName).to.equal("sepolia");
@@ -174,10 +231,12 @@ describe("ViewCard CLI Script Integration Tests", function () {
     it("Should parse environment variables when CLI args are absent", function () {
       const cardAddr = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
       const feedAddr = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+      const coreAddr = "0x90f79BF6Eb2c4F809663852283088995309D4123";
 
       process.env.TOKEN_ID = "77";
       process.env.VAULT_CARD_ADDRESS = cardAddr;
       process.env.PRICE_FEED_ADDRESS = feedAddr;
+      process.env.LOAN_CORE_ADDRESS = coreAddr;
       process.env.HARDHAT_NETWORK = "sepolia";
 
       try {
@@ -185,32 +244,38 @@ describe("ViewCard CLI Script Integration Tests", function () {
         expect(parsed.tokenId).to.equal(77n);
         expect(parsed.vaultCardAddress).to.equal(cardAddr);
         expect(parsed.priceFeedAddress).to.equal(feedAddr);
+        expect(parsed.loanCoreAddress).to.equal(coreAddr);
         expect(parsed.networkName).to.equal("sepolia");
       } finally {
         delete process.env.TOKEN_ID;
         delete process.env.VAULT_CARD_ADDRESS;
         delete process.env.PRICE_FEED_ADDRESS;
+        delete process.env.LOAN_CORE_ADDRESS;
         delete process.env.HARDHAT_NETWORK;
       }
     });
 
-    it("Should parse alternative environment variable names (CARD_TOKEN_ID, CARD_ADDRESS, FEED_ADDRESS)", function () {
+    it("Should parse alternative environment variable names (CARD_TOKEN_ID, CARD_ADDRESS, FEED_ADDRESS, VAULT_LOAN_CORE_ADDRESS)", function () {
       const cardAddr = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
       const feedAddr = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+      const coreAddr = "0x90f79BF6Eb2c4F809663852283088995309D4123";
 
       process.env.CARD_TOKEN_ID = "88";
       process.env.CARD_ADDRESS = cardAddr;
       process.env.FEED_ADDRESS = feedAddr;
+      process.env.VAULT_LOAN_CORE_ADDRESS = coreAddr;
 
       try {
         const parsed = parseCliArgs(["node", "view-card.ts"]);
         expect(parsed.tokenId).to.equal(88n);
         expect(parsed.vaultCardAddress).to.equal(cardAddr);
         expect(parsed.priceFeedAddress).to.equal(feedAddr);
+        expect(parsed.loanCoreAddress).to.equal(coreAddr);
       } finally {
         delete process.env.CARD_TOKEN_ID;
         delete process.env.CARD_ADDRESS;
         delete process.env.FEED_ADDRESS;
+        delete process.env.VAULT_LOAN_CORE_ADDRESS;
       }
     });
   });
@@ -306,6 +371,58 @@ describe("ViewCard CLI Script Integration Tests", function () {
     });
   });
 
+  describe("resolveLoanCoreAddress", function () {
+    it("Should prioritize CLI address when valid", async function () {
+      const coreAddr = "0x90f79BF6Eb2c4F809663852283088995309D4123";
+      const resolved = await resolveLoanCoreAddress(
+        ethers.provider,
+        process.cwd(),
+        coreAddr
+      );
+      expect(resolved).to.equal(coreAddr);
+    });
+
+    it("Should resolve from LOAN_CORE_ADDRESS environment variable", async function () {
+      const coreAddr = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+      process.env.LOAN_CORE_ADDRESS = coreAddr;
+      try {
+        const resolved = await resolveLoanCoreAddress(ethers.provider);
+        expect(resolved).to.equal(coreAddr);
+      } finally {
+        delete process.env.LOAN_CORE_ADDRESS;
+      }
+    });
+
+    it("Should resolve from VAULT_LOAN_CORE_ADDRESS environment variable", async function () {
+      const coreAddr = "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65";
+      process.env.VAULT_LOAN_CORE_ADDRESS = coreAddr;
+      try {
+        const resolved = await resolveLoanCoreAddress(ethers.provider);
+        expect(resolved).to.equal(coreAddr);
+      } finally {
+        delete process.env.VAULT_LOAN_CORE_ADDRESS;
+      }
+    });
+
+    it("Should return null when loan core cannot be resolved", async function () {
+      const savedCore = process.env.LOAN_CORE_ADDRESS;
+      const savedCore2 = process.env.VAULT_LOAN_CORE_ADDRESS;
+      delete process.env.LOAN_CORE_ADDRESS;
+      delete process.env.VAULT_LOAN_CORE_ADDRESS;
+
+      try {
+        const resolved = await resolveLoanCoreAddress(
+          ethers.provider,
+          "/non/existent/dir"
+        );
+        expect(resolved).to.be.null;
+      } finally {
+        if (savedCore) process.env.LOAN_CORE_ADDRESS = savedCore;
+        if (savedCore2) process.env.VAULT_LOAN_CORE_ADDRESS = savedCore2;
+      }
+    });
+  });
+
   describe("fetchCardDetails integration", function () {
     it("Should fetch full card details and oracle valuation for minted card", async function () {
       const { vaultCard, priceFeed, minter, oracle, user, cardTypeId1, attestationHash1 } =
@@ -378,6 +495,65 @@ describe("ViewCard CLI Script Integration Tests", function () {
 
       const details = await fetchCardDetails(vaultCard, 1n);
       expect(details.isLocked).to.be.true;
+    });
+
+    it("Should fetch card details and vault lock info when card is locked in loan core vault", async function () {
+      const {
+        vaultCard,
+        priceFeed,
+        loanCore,
+        minter,
+        oracle,
+        store,
+        cardTypeId1,
+        attestationHash1,
+      } = await networkHelpers.loadFixture(deployProtocolFixture);
+
+      const tokenUri = "ipfs://QmTestCardInVault1";
+      await vaultCard
+        .connect(minter)
+        .mintCard(store.address, cardTypeId1, attestationHash1, tokenUri);
+
+      const price = ethers.parseUnits("3500", 18);
+      await priceFeed.connect(oracle).setPrice(cardTypeId1, price);
+
+      const loanCoreAddress = await loanCore.getAddress();
+
+      // Store creates vault #1, approves loanCore, and deposits collateral
+      await loanCore.connect(store).createVault();
+      await vaultCard.connect(store).setApprovalForAll(loanCoreAddress, true);
+      await loanCore.connect(store).depositCollateral(1n, [1n]);
+
+      const details = await fetchCardDetails(
+        vaultCard,
+        1n,
+        priceFeed,
+        loanCore
+      );
+
+      expect(details.tokenId).to.equal(1n);
+      expect(details.owner).to.equal(loanCoreAddress);
+      expect(details.isLocked).to.be.true;
+      expect(details.loanCoreAddress).to.equal(loanCoreAddress);
+
+      expect(details.vaultLockInfo).to.not.be.undefined;
+      expect(details.vaultLockInfo?.vaultId).to.equal(1n);
+      expect(details.vaultLockInfo?.vaultOwner).to.equal(store.address);
+      expect(details.vaultLockInfo?.vaultStatus).to.equal("Active");
+      expect(details.vaultLockInfo?.loanCoreAddress).to.equal(loanCoreAddress);
+      expect(details.vaultLockInfo?.principalDebt).to.equal(0n);
+      expect(details.vaultLockInfo?.accumulatedInterest).to.equal(0n);
+
+      const table = formatCardDetailsTable(details);
+      expect(table).to.include(
+        "Lock Status        : LOCKED [In Escrow / Collateralized]"
+      );
+      expect(table).to.include(
+        "Locked in Vault    : Vault #1 (Status: Active)"
+      );
+      expect(table).to.include(`Vault Owner (Store): ${store.address}`);
+      expect(table).to.include(`Loan Core Escrow   : ${loanCoreAddress}`);
+      expect(table).to.include("$3,500.00 USD");
     });
 
     it("Should throw error for burned card", async function () {
@@ -468,6 +644,45 @@ describe("ViewCard CLI Script Integration Tests", function () {
       expect(table).to.include("Token URI          : (empty)");
       expect(table).to.include("Price Feed         : Not configured / unavailable");
       expect(table).to.include("Fair Market Value  : N/A");
+    });
+
+    it("Should format locked card with vaultLockInfo into table correctly", function () {
+      const details: CardDetails = {
+        tokenId: 1n,
+        contractAddress: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        contractName: "HoloFi TCG Cards",
+        contractSymbol: "HFC",
+        owner: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+        tokenURI: "ipfs://QmTestURI",
+        cardTypeId:
+          "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        attestationHash:
+          "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+        mintTimestamp: 1700000000n,
+        mintDate: "2023-11-14T22:13:20.000Z",
+        isLocked: true,
+        loanCoreAddress: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+        vaultLockInfo: {
+          vaultId: 1n,
+          vaultOwner: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          loanCoreAddress: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+          vaultStatus: "Active",
+          principalDebt: 0n,
+          accumulatedInterest: 0n,
+        },
+      };
+
+      const table = formatCardDetailsTable(details);
+      expect(table).to.include(
+        "Lock Status        : LOCKED [In Escrow / Collateralized]"
+      );
+      expect(table).to.include("Locked in Vault    : Vault #1 (Status: Active)");
+      expect(table).to.include(
+        "Vault Owner (Store): 0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+      );
+      expect(table).to.include(
+        "Loan Core Escrow   : 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+      );
     });
 
     it("Should format unpriced card type correctly when price feed exists without price", function () {

@@ -223,7 +223,7 @@ npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xA4a75B3f3e95722
 
 ## 5. Vault Card NFT Details Viewer (`scripts/view-card.ts`)
 
-The HoloFi protocol includes a dedicated NFT inspection CLI tool located at [`scripts/view-card.ts`](../scripts/view-card.ts) to query on-chain card attributes, physical vault attestation hashes, collateral lock status, and real-time Oracle Fair Market Value (FMV) valuations for any `HoloFiVaultCard` by token ID.
+The HoloFi protocol includes a dedicated NFT inspection CLI tool located at [`scripts/view-card.ts`](../scripts/view-card.ts) to query on-chain card attributes, physical vault attestation hashes, collateral lock status, escrow/vault owner metadata, and real-time Oracle Fair Market Value (FMV) valuations for any `HoloFiVaultCard` by token ID.
 
 ### Command Syntax
 
@@ -236,7 +236,7 @@ npx tsx scripts/view-card.ts <tokenId> [vaultCardAddress] [options]
 
 #### Method B: Hardhat Run with Environment Variables
 ```bash
-TOKEN_ID=<tokenId> [VAULT_CARD_ADDRESS=<address>] [PRICE_FEED_ADDRESS=<address>] npx hardhat run scripts/view-card.ts --network <network>
+TOKEN_ID=<tokenId> [VAULT_CARD_ADDRESS=<address>] [PRICE_FEED_ADDRESS=<address>] [LOAN_CORE_ADDRESS=<address>] npx hardhat run scripts/view-card.ts --network <network>
 ```
 
 ### CLI Arguments & Options
@@ -247,20 +247,21 @@ TOKEN_ID=<tokenId> [VAULT_CARD_ADDRESS=<address>] [PRICE_FEED_ADDRESS=<address>]
 | `[vaultCardAddress]` | Positional / Optional | Address of the `HoloFiVaultCard` contract | `npm run view-card 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9` |
 | `--contract`, `-c` | Option Flag | Specify `HoloFiVaultCard` contract address | `--contract 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9` |
 | `--price-feed`, `-p` | Option Flag | Specify `HoloFiCardPriceFeed` contract address | `--price-feed 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
+| `--loan-core`, `-l` | Option Flag | Specify `HoloFiVaultLoanCore` contract address | `--loan-core 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0` |
 | `--network`, `-n` | Option Flag | Target RPC network (default: `localhost`) | `--network sepolia` |
 | `--help`, `-h` | Option Flag | Display usage information and examples | `npm run view-card --help` |
 
 ### Address Resolution Precedence
 
-The script resolves `HoloFiVaultCard` and `HoloFiCardPriceFeed` addresses automatically using the following hierarchy:
+The script resolves `HoloFiVaultCard`, `HoloFiCardPriceFeed`, and `HoloFiVaultLoanCore` addresses automatically using the following hierarchy:
 
-1. **CLI Arguments & Flags**: Direct positional arguments or `--contract` / `--price-feed` flags.
-2. **Environment Variables**: `VAULT_CARD_ADDRESS` (or `CARD_ADDRESS`, `CONTRACT_ADDRESS`) and `PRICE_FEED_ADDRESS` (or `FEED_ADDRESS`).
+1. **CLI Arguments & Flags**: Direct positional arguments or `--contract` / `--price-feed` / `--loan-core` flags.
+2. **Environment Variables**: `VAULT_CARD_ADDRESS` (or `CARD_ADDRESS`, `CONTRACT_ADDRESS`), `PRICE_FEED_ADDRESS` (or `FEED_ADDRESS`), and `LOAN_CORE_ADDRESS` (or `VAULT_LOAN_CORE_ADDRESS`).
 3. **Ignition Deployments**: Auto-discovered from `ignition/deployments/chain-<chainId>/deployed_addresses.json` or root `deployed_addresses.json`.
 
 ### Operator Examples
 
-#### 1. Inspect Token ID #1 (Auto-Resolved Contracts)
+#### 1. Inspect Token ID #1 (Auto-Resolved Contracts, Unlocked Card)
 ```bash
 npm run view-card 1
 ```
@@ -290,7 +291,7 @@ Last Updated       : 2026-08-16T12:05:00.000Z (Unix: 1786881900)
 ================================================================================
 ```
 
-#### 2. Query Locked Card in Escrow
+#### 2. Query Locked Card in Loan Core Vault
 ```bash
 npm run view-card 2
 ```
@@ -302,9 +303,25 @@ Output:
 ================================================================================
 Token ID           : 2
 Contract           : 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 (HoloFi TCG Cards - HFC)
-Owner Address      : 0x90F79bf6EB2c4f809663852283088995309d4123
+Owner Address      : 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
 Lock Status        : LOCKED [In Escrow / Collateralized]
-...
+Locked in Vault    : Vault #1 (Status: Active)
+Vault Owner (Store): 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+Loan Core Escrow   : 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+Minted At          : 2026-08-16T12:00:00.000Z (Unix: 1786881600)
+Token URI          : ipfs://QmZtmD2qt8fJpq3CLDHheZAs6GLbmGL5Ux85GYxs9L83vW
+--------------------------------------------------------------------------------
+ASSET & ATTESTATION DETAILS
+--------------------------------------------------------------------------------
+Card Type ID       : 0x8b329f6b92a543f9a7217983c27e8a946cb32cf39db99c855a8264e107db32d3
+Attestation Hash   : 0x3d49f60e909a39f6044a30a109787ff8c5120689b9101b0f5ef22dcf1e70e28f
+--------------------------------------------------------------------------------
+ORACLE VALUATION (FMV)
+--------------------------------------------------------------------------------
+Price Feed         : 0x5FbDB2315678afecb367f032d93F642f64180aa3
+Fair Market Value  : $3,500.00 USD (3500.0 USD)
+Last Updated       : 2026-08-16T12:05:00.000Z (Unix: 1786881900)
+================================================================================
 ```
 
 #### 3. Inspect Card on Sepolia Testnet
@@ -312,9 +329,9 @@ Lock Status        : LOCKED [In Escrow / Collateralized]
 npm run view-card 1 --network sepolia
 ```
 
-#### 4. Explicit Contract and Price Feed Addresses
+#### 4. Explicit Contract, Price Feed, and Loan Core Addresses
 ```bash
-npm run view-card 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 --price-feed 0x5FbDB2315678afecb367f032d93F642f64180aa3
+npm run view-card 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 --price-feed 0x5FbDB2315678afecb367f032d93F642f64180aa3 --loan-core 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
 ```
 
 #### 5. Hardhat Runner Execution
