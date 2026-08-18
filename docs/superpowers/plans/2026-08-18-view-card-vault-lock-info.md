@@ -24,16 +24,16 @@
 **Interfaces:**
 - Produces: `LOAN_CORE_ABI`, `VaultLockInfo`, `resolveLoanCoreAddress`, updated `fetchCardDetails`, `formatCardDetailsTable`, `parseCliArgs`, `printHelp`.
 
-- [ ] **Step 1: Update `scripts/view-card.ts`**
+- [x] **Step 1: Update `scripts/view-card.ts`**
 
 Export `LOAN_CORE_ABI` and `VaultLockInfo`. Add `loanCoreAddress?: string;` and `vaultLockInfo?: VaultLockInfo;` to `CardDetails`. Implement `resolveLoanCoreAddress`. Update `fetchCardDetails`, `formatCardDetailsTable`, `parseCliArgs`, `printHelp`, and `main`.
 
-- [ ] **Step 2: Verify compilation and typecheck**
+- [x] **Step 2: Verify compilation and typecheck**
 
 Run: `npx hardhat build && npx tsc --noEmit`
 Expected: PASS cleanly.
 
-- [ ] **Step 3: Commit Task 1**
+- [x] **Step 3: Commit Task 1**
 
 ```bash
 git add scripts/view-card.ts
@@ -51,20 +51,20 @@ git commit -m "feat: add vault lock and owner details for locked cards in view-c
 **Interfaces:**
 - Produces: Unit and integration tests for locked card vault inspection and updated documentation.
 
-- [ ] **Step 1: Update `test/ViewCardScript.ts`**
+- [x] **Step 1: Update `test/ViewCardScript.ts`**
 
 Add tests for `resolveLoanCoreAddress`, CLI `--loan-core` flag, and integration tests with `depositCollateral` to verify `vaultLockInfo` extraction (`vaultId`, `vaultOwner`, `vaultStatus`) and ASCII table rendering.
 
-- [ ] **Step 2: Update `docs/Deployment Guide.md`**
+- [x] **Step 2: Update `docs/Deployment Guide.md`**
 
 Update Section 5 to document vault lock details and sample terminal outputs for locked cards.
 
-- [ ] **Step 3: Run full verification suite**
+- [x] **Step 3: Run full verification suite**
 
 Run: `npx hardhat build && npx tsc --noEmit && npx hardhat test`
 Expected: PASS cleanly (273+ total tests).
 
-- [ ] **Step 4: Commit Task 2**
+- [x] **Step 4: Commit Task 2**
 
 ```bash
 git add test/ViewCardScript.ts "docs/Deployment Guide.md"
