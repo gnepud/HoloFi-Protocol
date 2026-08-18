@@ -19,6 +19,11 @@ export const PRICE_FEED_ABI = [
   "function isSupportedCardType(bytes32 cardTypeId) external view returns (bool)",
 ];
 
+export const LOAN_CORE_ABI = [
+  "function nftVaultId(uint256 tokenId) external view returns (uint256)",
+  "function getVault(uint256 vaultId) external view returns (tuple(uint256 vaultId, address owner, uint256[] tokenIds, uint256 principalDebt, uint256 accumulatedInterest, uint256 lastInterestUpdateTime, uint8 status))",
+];
+
 export interface CardMetadata {
   tokenId: bigint;
   cardTypeId: string;
@@ -32,6 +37,15 @@ export interface CardPriceInfo {
   priceFormatted: string;
   lastUpdated: bigint;
   lastUpdatedDate: string;
+}
+
+export interface VaultLockInfo {
+  vaultId: bigint;
+  vaultOwner: string;
+  loanCoreAddress: string;
+  vaultStatus: "Active" | "Liquidating" | "Closed" | "Unknown";
+  principalDebt?: bigint;
+  accumulatedInterest?: bigint;
 }
 
 export interface CardDetails {
@@ -48,12 +62,15 @@ export interface CardDetails {
   isLocked: boolean;
   priceFeedAddress?: string;
   priceInfo?: CardPriceInfo;
+  loanCoreAddress?: string;
+  vaultLockInfo?: VaultLockInfo;
 }
 
 export interface ParsedCliArgs {
   tokenId?: bigint;
   vaultCardAddress?: string;
   priceFeedAddress?: string;
+  loanCoreAddress?: string;
   networkName?: string;
   help?: boolean;
 }
@@ -110,6 +127,17 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
         continue;
       }
       if (
+        (arg === "--loan-core" || arg === "--loancore" || arg === "-l") &&
+        i + 1 < argv.length
+      ) {
+        result.loanCoreAddress = argv[++i];
+        continue;
+      }
+      if (arg.startsWith("--loan-core=") || arg.startsWith("--loancore=")) {
+        result.loanCoreAddress = arg.split("=")[1];
+        continue;
+      }
+      if (
         arg === "run" ||
         arg.endsWith(".ts") ||
         arg.endsWith(".js") ||
@@ -155,6 +183,13 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
       result.priceFeedAddress = tokens[++i];
     } else if (token.startsWith("--price-feed=") || token.startsWith("--pricefeed=")) {
       result.priceFeedAddress = token.split("=")[1];
+    } else if (
+      (token === "--loan-core" || token === "--loancore" || token === "-l") &&
+      i + 1 < tokens.length
+    ) {
+      result.loanCoreAddress = tokens[++i];
+    } else if (token.startsWith("--loan-core=") || token.startsWith("--loancore=")) {
+      result.loanCoreAddress = token.split("=")[1];
     } else if (!token.startsWith("-")) {
       positional.push(token);
     }
@@ -215,6 +250,15 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
     const envFeed = process.env.PRICE_FEED_ADDRESS || process.env.FEED_ADDRESS;
     if (envFeed && ethers.isAddress(envFeed.trim())) {
       result.priceFeedAddress = envFeed.trim();
+    }
+  }
+
+  if (!result.loanCoreAddress) {
+    const envLoanCore =
+      process.env.LOAN_CORE_ADDRESS ||
+      process.env.VAULT_LOAN_CORE_ADDRESS;
+    if (envLoanCore && ethers.isAddress(envLoanCore.trim())) {
+      result.loanCoreAddress = envLoanCore.trim();
     }
   }
 
@@ -450,12 +494,125 @@ export async function resolvePriceFeedAddress(
 }
 
 /**
- * Fetch full card details from contract and optional price feed.
+ * Resolve HoloFiVaultLoanCore contract address with precedence:
+ * 1. CLI argument
+ * 2. Environment variable LOAN_CORE_ADDRESS / VAULT_LOAN_CORE_ADDRESS
+ * 3. Ignition deployment files
+ */
+export async function resolveLoanCoreAddress(
+  provider: ethers.Provider,
+  projectRoot: string = process.cwd(),
+  cliAddress?: string
+): Promise<string | null> {
+  if (cliAddress && ethers.isAddress(cliAddress)) {
+    return ethers.getAddress(cliAddress);
+  }
+
+  if (
+    process.env.LOAN_CORE_ADDRESS &&
+    ethers.isAddress(process.env.LOAN_CORE_ADDRESS)
+  ) {
+    return ethers.getAddress(process.env.LOAN_CORE_ADDRESS);
+  }
+
+  if (
+    process.env.VAULT_LOAN_CORE_ADDRESS &&
+    ethers.isAddress(process.env.VAULT_LOAN_CORE_ADDRESS)
+  ) {
+    return ethers.getAddress(process.env.VAULT_LOAN_CORE_ADDRESS);
+  }
+
+  // Check Ignition deployments
+  try {
+    const networkInfo = await provider.getNetwork();
+    const chainId = networkInfo.chainId.toString();
+
+    // 1. Check exact chain deployment file
+    const chainDeploymentPath = path.resolve(
+      projectRoot,
+      `ignition/deployments/chain-${chainId}/deployed_addresses.json`
+    );
+    if (fs.existsSync(chainDeploymentPath)) {
+      const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
+      for (const [key, addr] of Object.entries(data)) {
+        if (
+          (key === "DeployHoloFiProtocol#HoloFiVaultLoanCore" ||
+            key === "HoloFiVaultLoanCore" ||
+            key.includes("HoloFiVaultLoanCore") ||
+            key.includes("VaultLoanCore") ||
+            key.includes("LoanCore")) &&
+          typeof addr === "string" &&
+          ethers.isAddress(addr)
+        ) {
+          return ethers.getAddress(addr);
+        }
+      }
+    }
+
+    // 2. Search all ignition deployments directories
+    const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
+    if (fs.existsSync(deploymentsDir)) {
+      const entries = fs.readdirSync(deploymentsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const file = path.join(
+            deploymentsDir,
+            entry.name,
+            "deployed_addresses.json"
+          );
+          if (fs.existsSync(file)) {
+            const data = JSON.parse(fs.readFileSync(file, "utf-8"));
+            for (const [key, addr] of Object.entries(data)) {
+              if (
+                (key === "DeployHoloFiProtocol#HoloFiVaultLoanCore" ||
+                  key === "HoloFiVaultLoanCore" ||
+                  key.includes("HoloFiVaultLoanCore") ||
+                  key.includes("VaultLoanCore") ||
+                  key.includes("LoanCore")) &&
+                typeof addr === "string" &&
+                ethers.isAddress(addr)
+              ) {
+                return ethers.getAddress(addr);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Search root deployed_addresses.json
+    const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
+    if (fs.existsSync(rootDeployed)) {
+      const data = JSON.parse(fs.readFileSync(rootDeployed, "utf-8"));
+      for (const [key, addr] of Object.entries(data)) {
+        if (
+          (key === "DeployHoloFiProtocol#HoloFiVaultLoanCore" ||
+            key === "HoloFiVaultLoanCore" ||
+            key.includes("HoloFiVaultLoanCore") ||
+            key.includes("VaultLoanCore") ||
+            key.includes("LoanCore")) &&
+          typeof addr === "string" &&
+          ethers.isAddress(addr)
+        ) {
+          return ethers.getAddress(addr);
+        }
+      }
+    }
+  } catch {
+    // Continue to return null
+  }
+
+  return null;
+}
+
+/**
+ * Fetch full card details from contract, optional price feed, and optional loan core.
  */
 export async function fetchCardDetails(
   vaultCard: ethers.Contract | ethers.BaseContract | any,
   tokenId: bigint | number,
-  priceFeed?: ethers.Contract | ethers.BaseContract | any | null
+  priceFeed?: ethers.Contract | ethers.BaseContract | any | null,
+  loanCore?: ethers.Contract | ethers.BaseContract | any | null
 ): Promise<CardDetails> {
   const id = BigInt(tokenId);
   const contractAddress = await vaultCard.getAddress();
@@ -515,6 +672,52 @@ export async function fetchCardDetails(
     }
   }
 
+  let loanCoreAddress: string | undefined;
+  let vaultLockInfo: VaultLockInfo | undefined;
+
+  if (loanCore) {
+    try {
+      const coreAddress = await loanCore.getAddress();
+      loanCoreAddress = coreAddress;
+      const vaultIdRaw = await loanCore.nftVaultId(id);
+      const vaultId = BigInt(vaultIdRaw);
+
+      if (vaultId > 0n) {
+        const vaultStruct = await loanCore.getVault(vaultId);
+        const vaultOwner = (vaultStruct.owner ?? vaultStruct[1]) as string;
+        const statusNum = Number(vaultStruct.status ?? vaultStruct[6]);
+        let vaultStatus: "Active" | "Liquidating" | "Closed" | "Unknown";
+        if (statusNum === 0) {
+          vaultStatus = "Active";
+        } else if (statusNum === 1) {
+          vaultStatus = "Liquidating";
+        } else if (statusNum === 2) {
+          vaultStatus = "Closed";
+        } else {
+          vaultStatus = "Unknown";
+        }
+
+        const principalDebt = BigInt(
+          vaultStruct.principalDebt ?? vaultStruct[3] ?? 0n
+        );
+        const accumulatedInterest = BigInt(
+          vaultStruct.accumulatedInterest ?? vaultStruct[4] ?? 0n
+        );
+
+        vaultLockInfo = {
+          vaultId,
+          vaultOwner,
+          loanCoreAddress: coreAddress,
+          vaultStatus,
+          principalDebt,
+          accumulatedInterest,
+        };
+      }
+    } catch {
+      // Gracefully handle case where loan core call fails or not applicable
+    }
+  }
+
   return {
     tokenId: id,
     contractAddress,
@@ -529,6 +732,8 @@ export async function fetchCardDetails(
     isLocked,
     priceFeedAddress,
     priceInfo,
+    loanCoreAddress,
+    vaultLockInfo,
   };
 }
 
@@ -539,10 +744,6 @@ export function formatCardDetailsTable(details: CardDetails): string {
   const border = "=".repeat(80);
   const divider = "-".repeat(80);
 
-  const lockStatus = details.isLocked
-    ? "LOCKED [In Escrow / Collateralized]"
-    : "UNLOCKED [Free / Transferable]";
-
   const lines: string[] = [
     border,
     "                         HoloFi Vault Card NFT Metadata                         ",
@@ -550,7 +751,23 @@ export function formatCardDetailsTable(details: CardDetails): string {
     `Token ID           : ${details.tokenId.toString()}`,
     `Contract           : ${details.contractAddress} (${details.contractName} - ${details.contractSymbol})`,
     `Owner Address      : ${details.owner}`,
-    `Lock Status        : ${lockStatus}`,
+  ];
+
+  if (details.isLocked && details.vaultLockInfo) {
+    lines.push(
+      `Lock Status        : LOCKED [In Escrow / Collateralized]`,
+      `Locked in Vault    : Vault #${details.vaultLockInfo.vaultId.toString()} (Status: ${details.vaultLockInfo.vaultStatus})`,
+      `Vault Owner (Store): ${details.vaultLockInfo.vaultOwner}`,
+      `Loan Core Escrow   : ${details.vaultLockInfo.loanCoreAddress}`
+    );
+  } else {
+    const lockStatus = details.isLocked
+      ? "LOCKED [In Escrow / Collateralized]"
+      : "UNLOCKED [Free / Transferable]";
+    lines.push(`Lock Status        : ${lockStatus}`);
+  }
+
+  lines.push(
     `Minted At          : ${details.mintDate} (Unix: ${details.mintTimestamp.toString()})`,
     `Token URI          : ${details.tokenURI || "(empty)"}`,
     divider,
@@ -560,8 +777,8 @@ export function formatCardDetailsTable(details: CardDetails): string {
     `Attestation Hash   : ${details.attestationHash}`,
     divider,
     "ORACLE VALUATION (FMV)",
-    divider,
-  ];
+    divider
+  );
 
   if (details.priceInfo && details.priceFeedAddress) {
     lines.push(
@@ -608,6 +825,7 @@ Positional Arguments:
 Options:
   --contract, -c <addr>   Specify HoloFiVaultCard contract address
   --price-feed, -p <addr> Specify HoloFiCardPriceFeed contract address
+  --loan-core, -l <addr>  Specify HoloFiVaultLoanCore contract address
   --network, -n <net>     Target network (e.g. localhost, sepolia, mainnet). Default: localhost
   --help, -h              Show this help message
 
@@ -615,6 +833,7 @@ Environment Variables:
   TOKEN_ID                Default token ID if not provided as argument
   VAULT_CARD_ADDRESS      Default HoloFiVaultCard contract address
   PRICE_FEED_ADDRESS      Default HoloFiCardPriceFeed contract address
+  LOAN_CORE_ADDRESS       Default HoloFiVaultLoanCore contract address
   HARDHAT_NETWORK         Default network to connect to
 
 Examples:
@@ -690,6 +909,12 @@ export async function main(): Promise<void> {
     args.priceFeedAddress
   );
 
+  const loanCoreAddress = await resolveLoanCoreAddress(
+    provider,
+    process.cwd(),
+    args.loanCoreAddress
+  );
+
   const vaultCard = new ethers.Contract(
     vaultCardAddress,
     VAULT_CARD_ABI,
@@ -700,8 +925,17 @@ export async function main(): Promise<void> {
     ? new ethers.Contract(priceFeedAddress, PRICE_FEED_ABI, signer || provider)
     : null;
 
+  const loanCore = loanCoreAddress
+    ? new ethers.Contract(loanCoreAddress, LOAN_CORE_ABI, signer || provider)
+    : null;
+
   try {
-    const details = await fetchCardDetails(vaultCard, args.tokenId, priceFeed);
+    const details = await fetchCardDetails(
+      vaultCard,
+      args.tokenId,
+      priceFeed,
+      loanCore
+    );
     console.log("\n" + formatCardDetailsTable(details) + "\n");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
