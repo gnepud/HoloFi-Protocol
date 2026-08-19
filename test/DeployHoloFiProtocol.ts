@@ -160,6 +160,13 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     expect(await premiumContract.liquidationPenaltyBps()).to.equal(1000n);
     expect(await premiumContract.borrowRateBpsPerYear()).to.equal(500n);
     expect(await premiumContract.loanCore()).to.equal(loanCoreAddr);
+    expect(await premiumContract.eligibilityPolicy()).to.not.equal(ethers.ZeroAddress);
+
+    // Verify Premium Policy parameters (PSA >= 10)
+    const premiumPolicy = await ethers.getContractAt("GradeEligibilityPolicy", await premiumContract.eligibilityPolicy());
+    expect(await premiumPolicy.requiredGrader()).to.equal("PSA");
+    expect(await premiumPolicy.minGrade()).to.equal(10n);
+    expect(await premiumPolicy.maxGrade()).to.equal(0n);
 
     // Verify Deluxe Pool parameters
     const deluxeContract = deluxeLendingPool as any;
@@ -170,6 +177,13 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     expect(await deluxeContract.liquidationPenaltyBps()).to.equal(1000n);
     expect(await deluxeContract.borrowRateBpsPerYear()).to.equal(800n);
     expect(await deluxeContract.loanCore()).to.equal(loanCoreAddr);
+    expect(await deluxeContract.eligibilityPolicy()).to.not.equal(ethers.ZeroAddress);
+
+    // Verify Deluxe Policy parameters (PSA <= 9)
+    const deluxePolicy = await ethers.getContractAt("GradeEligibilityPolicy", await deluxeContract.eligibilityPolicy());
+    expect(await deluxePolicy.requiredGrader()).to.equal("PSA");
+    expect(await deluxePolicy.minGrade()).to.equal(0n);
+    expect(await deluxePolicy.maxGrade()).to.equal(9n);
 
     // Verify 10M EURC total split evenly (5M EURC in each pool)
     expect(await (mockAsset as any).balanceOf(premiumPoolAddr)).to.equal(5_000_000_000_000n);

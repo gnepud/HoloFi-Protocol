@@ -15,7 +15,8 @@ The HoloFi protocol deployment is orchestrated deterministically via Hardhat Ign
 4. HoloFiLendingPoolFactory           ──► Pool factory instance
 5. HoloFiVaultLoanCore (loanCore)     ──► Core credit & vault manager
 6. HoloFiDutchAuction (dutchAuction)  ──► Open-market liquidation engine
-7. [Optional] HoloFiLendingPool       ──► ERC-4626 liquidity pool instance
+7. [Optional] GradeEligibilityPolicy  ──► Grader and integer grade filter policy
+8. [Optional] HoloFiLendingPool       ──► ERC-4626 liquidity pool instances (Premium & Deluxe)
 ```
 
 ---

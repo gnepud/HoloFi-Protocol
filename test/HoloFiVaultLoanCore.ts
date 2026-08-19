@@ -343,4 +343,129 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     const vaultInfo = await loanCore.getVault(1n);
     expect(vaultInfo.principalDebt).to.be.lte(ethers.parseUnits("2000", 6));
   });
+
+  it("Should enforce GradeEligibilityPolicy in depositCollateral across restricted and open lending pools", async function () {
+    const {
+      loanCore,
+      vaultCard,
+      store,
+      admin,
+      minter,
+      poolEurc,
+      poolEurcAddr,
+      poolFactory,
+      acm,
+    } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    // 1. Deploy PSA 10 policy and configure on poolEurc (Premium)
+    const policy = await ethers.deployContract("GradeEligibilityPolicy", [
+      await acm.getAddress(),
+      "PSA",
+      10n,
+      0n,
+    ]);
+    await poolEurc.connect(admin).setEligibilityPolicy(await policy.getAddress());
+
+    // 2. Register PSA 10 and PSA 9 cards
+    const psa10Attrs = {
+      game: "Pokemon",
+      language: "EN",
+      setName: "Base Set",
+      cardName: "Charizard",
+      cardNumber: "4/102",
+      printing: "1st Edition",
+      grader: "PSA",
+      grade: "10",
+    };
+    const psa9Attrs = {
+      game: "Pokemon",
+      language: "EN",
+      setName: "Base Set",
+      cardName: "Blastoise",
+      cardNumber: "2/102",
+      printing: "1st Edition",
+      grader: "PSA",
+      grade: "9",
+    };
+
+    const psa10CardTypeId = await policy.computeCardTypeId(psa10Attrs);
+    const psa9CardTypeId = await policy.computeCardTypeId(psa9Attrs);
+
+    await policy.connect(minter).registerCardType(psa10Attrs);
+    await policy.connect(minter).registerCardType(psa9Attrs);
+
+    expect(await policy.isCardTypeEligible(psa10CardTypeId)).to.be.true;
+    expect(await policy.isCardTypeEligible(psa9CardTypeId)).to.be.false;
+
+    // 3. Mint tokens to store
+    await vaultCard.connect(minter).mintCard(store.address, psa10CardTypeId, ethers.keccak256(ethers.toUtf8Bytes("att10")), "ipfs://10");
+    await vaultCard.connect(minter).mintCard(store.address, psa9CardTypeId, ethers.keccak256(ethers.toUtf8Bytes("att9")), "ipfs://9");
+
+    const psa10TokenId = 3n; // Since tokens 1 and 2 were minted in fixture
+    const psa9TokenId = 4n;
+
+    // 4. Create Vault 1 bound to Premium Pool (poolEurc)
+    await loanCore.connect(store).createVault(poolEurcAddr);
+    const vault1Id = 1n;
+
+    await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+
+    // 5. Depositing PSA 9 card into Premium Pool vault should REVERT with IneligibleCollateral
+    await expect(
+      loanCore.connect(store).depositCollateral(vault1Id, [psa9TokenId])
+    ).to.be.revertedWithCustomError(loanCore, "IneligibleCollateral")
+     .withArgs(psa9TokenId, psa9CardTypeId, poolEurcAddr);
+
+    // 6. Depositing PSA 10 card into Premium Pool vault should SUCCEED
+    await expect(
+      loanCore.connect(store).depositCollateral(vault1Id, [psa10TokenId])
+    ).to.emit(loanCore, "CollateralDeposited")
+     .withArgs(vault1Id, store.address, [psa10TokenId]);
+
+    // 7. Create Deluxe Pool with PSA <= 9 eligibility policy
+    const deluxeAsset = await ethers.deployContract("MockERC20", ["Deluxe EURC", "dEURC", 6]);
+    await poolFactory.connect(admin).createPool(
+      await deluxeAsset.getAddress(),
+      "Deluxe Pool EURC",
+      "dEURC",
+      4000n,
+      7000n,
+      1000n,
+      800n
+    );
+    const deluxePoolAddr = await poolFactory.getPool(await deluxeAsset.getAddress());
+    const deluxePool = await ethers.getContractAt("HoloFiLendingPool", deluxePoolAddr);
+    await deluxePool.connect(admin).setLoanCore(await loanCore.getAddress());
+
+    const deluxePolicy = await ethers.deployContract("GradeEligibilityPolicy", [
+      await acm.getAddress(),
+      "PSA",
+      0n,
+      9n,
+    ]);
+    await deluxePool.connect(admin).setEligibilityPolicy(await deluxePolicy.getAddress());
+
+    // Register both cards in deluxe policy
+    await deluxePolicy.connect(minter).registerCardType(psa10Attrs);
+    await deluxePolicy.connect(minter).registerCardType(psa9Attrs);
+
+    // 8. Create Vault 2 bound to Deluxe Pool
+    await loanCore.connect(store).createVault(deluxePoolAddr);
+    const vault2Id = 2n;
+
+    // 9. Depositing PSA 9 card into Deluxe Pool vault should SUCCEED
+    await expect(
+      loanCore.connect(store).depositCollateral(vault2Id, [psa9TokenId])
+    ).to.emit(loanCore, "CollateralDeposited")
+     .withArgs(vault2Id, store.address, [psa9TokenId]);
+
+    // 10. Mint second PSA 10 card and depositing into Deluxe Pool vault should REVERT with IneligibleCollateral
+    await vaultCard.connect(minter).mintCard(store.address, psa10CardTypeId, ethers.keccak256(ethers.toUtf8Bytes("att10_2")), "ipfs://10_2");
+    const psa10TokenId2 = 5n;
+
+    await expect(
+      loanCore.connect(store).depositCollateral(vault2Id, [psa10TokenId2])
+    ).to.be.revertedWithCustomError(loanCore, "IneligibleCollateral")
+     .withArgs(psa10TokenId2, psa10CardTypeId, deluxePoolAddr);
+  });
 });

@@ -47,6 +47,18 @@ const DeployHoloFiLendingPoolWithMock = buildModule("DeployHoloFiLendingPoolWith
   });
   m.call(premiumLendingPool, "setLoanCore", [loanCore], { id: "setLoanCorePremiumPool" });
 
+  // Policy: PSA >= 10 for Premium Pool
+  const premiumRequiredGrader = m.getParameter("premiumRequiredGrader", "PSA");
+  const premiumMinGrade = m.getParameter("premiumMinGrade", 10n);
+  const premiumMaxGrade = m.getParameter("premiumMaxGrade", 0n);
+  const premiumPoolPolicy = m.contract("GradeEligibilityPolicy", [
+    acm,
+    premiumRequiredGrader,
+    premiumMinGrade,
+    premiumMaxGrade,
+  ], { id: "PremiumPoolGradeEligibilityPolicy" });
+  m.call(premiumLendingPool, "setEligibilityPolicy", [premiumPoolPolicy], { id: "setEligibilityPolicyPremiumPool" });
+
   // Create Deluxe Pool (dEURC)
   const createDeluxePoolTx = m.call(poolFactory, "createPool", [
     mockAsset,
@@ -66,6 +78,18 @@ const DeployHoloFiLendingPoolWithMock = buildModule("DeployHoloFiLendingPoolWith
     id: "DeluxeLendingPool",
   });
   m.call(deluxeLendingPool, "setLoanCore", [loanCore], { id: "setLoanCoreDeluxePool" });
+
+  // Policy: PSA <= 9 for Deluxe Pool
+  const deluxeRequiredGrader = m.getParameter("deluxeRequiredGrader", "PSA");
+  const deluxeMinGrade = m.getParameter("deluxeMinGrade", 0n);
+  const deluxeMaxGrade = m.getParameter("deluxeMaxGrade", 9n);
+  const deluxePoolPolicy = m.contract("GradeEligibilityPolicy", [
+    acm,
+    deluxeRequiredGrader,
+    deluxeMinGrade,
+    deluxeMaxGrade,
+  ], { id: "DeluxePoolGradeEligibilityPolicy" });
+  m.call(deluxeLendingPool, "setEligibilityPolicy", [deluxePoolPolicy], { id: "setEligibilityPolicyDeluxePool" });
 
   const deployer = m.getAccount(0);
 
@@ -103,6 +127,8 @@ const DeployHoloFiLendingPoolWithMock = buildModule("DeployHoloFiLendingPoolWith
     dutchAuction,
     premiumLendingPool,
     deluxeLendingPool,
+    premiumPoolPolicy,
+    deluxePoolPolicy,
     lendingPool: premiumLendingPool,
     mockAsset,
     assetAddress: mockAsset,

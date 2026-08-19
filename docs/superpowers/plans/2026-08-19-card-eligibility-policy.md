@@ -123,30 +123,29 @@ git commit -m "feat(HF-38): integrate card eligibility policy in HoloFiLendingPo
 - Consumes: `GradeEligibilityPolicy`, `HoloFiLendingPool.eligibilityPolicy`, `HoloFiVaultLoanCore.IneligibleCollateral`.
 - Produces: Updated Ignition deployment with PSA 10 policy on Premium Pool, TypeScript integration tests, and updated documentation.
 
-- [ ] **Step 1: Update `ignition/modules/DeployHoloFiLendingPoolWithMock.ts`**
+- [x] **Step 1: Update `ignition/modules/DeployHoloFiLendingPoolWithMock.ts`**
 
-Deploy `GradeEligibilityPolicy(acm, "PSA", 10n, 0n)` as `premiumPoolPolicy` and call `premiumLendingPool.setEligibilityPolicy(premiumPoolPolicy)`. Leave `deluxeLendingPool` without policy (`address(0)`).
+Deploy `GradeEligibilityPolicy(acm, "PSA", 10n, 0n)` as `premiumPoolPolicy` and call `premiumLendingPool.setEligibilityPolicy(premiumPoolPolicy)`. Deploy `GradeEligibilityPolicy(acm, "PSA", 0n, 9n)` as `deluxePoolPolicy` and call `deluxeLendingPool.setEligibilityPolicy(deluxePoolPolicy)`.
 
-- [ ] **Step 2: Update TypeScript Integration Tests**
+- [x] **Step 2: Update TypeScript Integration Tests**
 
 Add integration tests:
 - `test/HoloFiLendingPool.ts`: Test `setEligibilityPolicy` and `isCollateralAllowed` with mock policy.
 - `test/HoloFiVaultLoanCore.ts`: End-to-end test with `GradeEligibilityPolicy`:
-  - Mint PSA 10 card and register in policy -> deposit into Premium Pool vault succeeds.
-  - Mint PSA 9 card and register in policy (not eligible) -> deposit into Premium Pool vault reverts with `IneligibleCollateral`.
-  - Deposit PSA 9 card into Deluxe Pool vault succeeds.
-- `test/DeployHoloFiProtocol.ts`: Verify `DeployHoloFiLendingPoolWithMock` deploys policy and wires `premiumLendingPool.eligibilityPolicy()`.
+  - Mint PSA 10 card and register in policy -> deposit into Premium Pool vault succeeds, deposit into Deluxe Pool vault reverts with `IneligibleCollateral`.
+  - Mint PSA 9 card and register in policy -> deposit into Deluxe Pool vault succeeds, deposit into Premium Pool vault reverts with `IneligibleCollateral`.
+- `test/DeployHoloFiProtocol.ts`: Verify `DeployHoloFiLendingPoolWithMock` deploys policies and wires `premiumLendingPool.eligibilityPolicy()` and `deluxeLendingPool.eligibilityPolicy()`.
 
-- [ ] **Step 3: Update `docs/System Architecture Document.md` and `docs/Deployment Guide.md`**
+- [x] **Step 3: Update `docs/System Architecture Document.md` and `docs/Deployment Guide.md`**
 
 Document the `ICardEligibilityPolicy` architecture, `GradeEligibilityPolicy`, `isCollateralAllowed` validation flow, and deployment configurations.
 
-- [ ] **Step 4: Run full verification suite**
+- [x] **Step 4: Run full verification suite**
 
 Run: `npx hardhat build && npx tsc --noEmit && npx hardhat test`
 Expected: PASS cleanly (all 290+ tests pass with 0 errors).
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add ignition/ test/ docs/

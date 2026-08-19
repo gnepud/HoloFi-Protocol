@@ -184,4 +184,37 @@ describe("HoloFiLendingPool Integration Tests", function () {
       poolEurc.connect(unauthorized).transferFrom(lp.address, unauthorized.address, shares)
     ).to.be.revertedWithCustomError(poolEurc, "ShareTokenNonTransferable");
   });
+
+  it("Should allow admin to set eligibility policy and check collateral allowance", async function () {
+    const { poolEurc, admin, acm, unauthorized } = await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    // Initial policy is address(0), so isCollateralAllowed returns true
+    const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("TestCard"));
+    expect(await poolEurc.eligibilityPolicy()).to.equal(ethers.ZeroAddress);
+    expect(await poolEurc.isCollateralAllowed(cardTypeId)).to.be.true;
+
+    // Deploy GradeEligibilityPolicy for PSA 10+
+    const policy = await ethers.deployContract("GradeEligibilityPolicy", [
+      await acm.getAddress(),
+      "PSA",
+      10n,
+      0n,
+    ]);
+    const policyAddr = await policy.getAddress();
+
+    // Unauthorized caller reverts
+    await expect(
+      poolEurc.connect(unauthorized).setEligibilityPolicy(policyAddr)
+    ).to.be.revertedWithCustomError(poolEurc, "UnauthorizedAdmin")
+     .withArgs(unauthorized.address);
+
+    // Admin sets policy
+    await expect(poolEurc.connect(admin).setEligibilityPolicy(policyAddr))
+      .to.emit(poolEurc, "EligibilityPolicyUpdated")
+      .withArgs(policyAddr);
+
+    expect(await poolEurc.eligibilityPolicy()).to.equal(policyAddr);
+    // Unregistered card is not eligible
+    expect(await poolEurc.isCollateralAllowed(cardTypeId)).to.be.false;
+  });
 });

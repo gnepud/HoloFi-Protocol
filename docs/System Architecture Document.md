@@ -173,6 +173,7 @@ uint256 public nextVaultId = 1;
 
 * **Escrow Deposit (`depositCollateral`)**:
   - Stores can add card NFTs to their active vault at any time.
+  - **Card Eligibility Validation**: Queries `HoloFiLendingPool(vault.lendingPool).isCollateralAllowed(card.cardTypeId)`. If the card is ineligible according to the bound pool's policy, the transaction reverts with `IneligibleCollateral(tokenId, cardTypeId, lendingPool)`.
   - Executes `vaultCard.safeTransferFrom(msg.sender, address(this), tokenId)` and locks cards via `vaultCard.setCardLock(tokenId, true)` to prevent secondary transfers.
   - Registers `nftVaultId[tokenId] = vaultId` and pushes `tokenId` to `vault.tokenIds`.
 
@@ -266,6 +267,9 @@ $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
   - Encapsulates risk parameters (`maxLtvBps`, `liquidationThresholdBps`, `liquidationPenaltyBps`, `borrowRateBpsPerYear`) per asset.
   - Validates `maxLtvBps <= liquidationThresholdBps <= 10000` on creation and during parameter adjustments via `setRiskParameters`.
   - Emits `RiskParametersUpdated` whenever risk parameters are updated by admin.
+  - Holds an optional `eligibilityPolicy` address pointing to an `ICardEligibilityPolicy` implementation.
+  - Configurable by `ADMIN_ROLE` via `setEligibilityPolicy(address)` emitting `EligibilityPolicyUpdated(address)`.
+  - Exposes `isCollateralAllowed(bytes32 cardTypeId)`: returns `true` if `eligibilityPolicy == address(0)` (unrestricted/open mode, e.g. Deluxe Pool), or delegates to `policy.isCardTypeEligible(cardTypeId)` (e.g. Premium Pool).
 
 * **Illiquidity Gate**:
   If available free liquidity in the pool is insufficient during a borrow request (`IERC20(asset).balanceOf(address(this)) < amount`):
@@ -276,7 +280,36 @@ $$\text{Asset}_{\text{available}} = \text{Balance}_{\text{Asset}}$$
 
 ---
 
-### 3.5. Liquidation Engine: `HoloFiDutchAuction`
+### 3.5. Card Eligibility Policy Engine: `ICardEligibilityPolicy` & `GradeEligibilityPolicy`
+
+To enforce collateral quality standards across different credit tiers (e.g. Premium Pool accepting only PSA 10 cards vs. Deluxe Pool accepting broader inventory), HoloFi provides a modular policy strategy engine:
+
+* **Policy Interface (`ICardEligibilityPolicy`)**:
+  - Canonical 8-attribute card structure:
+    ```solidity
+    struct CardAttributes {
+        string game;        // e.g. "Pokemon"
+        string language;    // e.g. "EN"
+        string setName;     // e.g. "Base Set"
+        string cardName;    // e.g. "Charizard"
+        string cardNumber;  // e.g. "4/102"
+        string printing;    // e.g. "1st Edition"
+        string grader;      // e.g. "PSA"
+        string grade;       // e.g. "10"
+    }
+    ```
+  - `computeCardTypeId(CardAttributes)`: Computes deterministic `keccak256(abi.encode(attrs))` card type ID.
+  - `registerCardType(CardAttributes)`: Evaluates attributes against criteria and registers eligibility.
+  - `isCardTypeEligible(bytes32 cardTypeId)`: Returns whitelist status for deposited cards.
+
+* **Grade & Grader Range Policy (`GradeEligibilityPolicy`)**:
+  - Filters by grader string (e.g. `"PSA"`, or empty for any grader) and numeric grade bounds (`minGrade` and `maxGrade`).
+  - Implements `parseGrade(string)` to parse ASCII grade numbers into integer `uint256` values for comparison ($\ge 10$, $\le 9$, exact grades, or bounded intervals).
+  - Protected by `MINTER_ROLE`: Only accounts holding `MINTER_ROLE` can invoke `registerCardType` or manual override `setCardTypeOverride(cardTypeId, eligible)`.
+
+---
+
+### 3.6. Liquidation Engine: `HoloFiDutchAuction`
 
 Activated when a store vault's Health Factor ($HF$) falls below 1.0:
 
