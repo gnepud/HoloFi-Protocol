@@ -66,12 +66,25 @@ describe("ViewCard CLI Script Integration Tests", function () {
       ethers.toUtf8Bytes("Blink:PSA:10:999")
     );
 
+    const eurc = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    await poolFactory.connect(admin).createPool(
+      await eurc.getAddress(),
+      "Pool EURC",
+      "pEURC",
+      5000n,
+      7000n,
+      1000n,
+      500n
+    );
+    const poolAddr = await poolFactory.getPool(await eurc.getAddress());
+
     return {
       acm,
       vaultCard,
       priceFeed,
       poolFactory,
       loanCore,
+      poolAddr,
       owner,
       admin,
       minter,
@@ -502,6 +515,7 @@ describe("ViewCard CLI Script Integration Tests", function () {
         vaultCard,
         priceFeed,
         loanCore,
+        poolAddr,
         minter,
         oracle,
         store,
@@ -520,7 +534,7 @@ describe("ViewCard CLI Script Integration Tests", function () {
       const loanCoreAddress = await loanCore.getAddress();
 
       // Store creates vault #1, approves loanCore, and deposits collateral
-      await loanCore.connect(store).createVault();
+      await loanCore.connect(store).createVault(poolAddr);
       await vaultCard.connect(store).setApprovalForAll(loanCoreAddress, true);
       await loanCore.connect(store).depositCollateral(1n, [1n]);
 

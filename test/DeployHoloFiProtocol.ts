@@ -65,7 +65,7 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
   it("Should allow KYB store to deposit collateral into loanCore deployed via Ignition without UnauthorizedLockOperator revert", async function () {
     const [admin, oracleFeeder, minter, treasury, store] = await ethers.getSigners();
 
-    const { acm, vaultCard, loanCore } = await ignition.deploy(
+    const { acm, vaultCard, loanCore, poolFactory } = await ignition.deploy(
       DeployHoloFiProtocol,
       {
         parameters: {
@@ -81,9 +81,23 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     const acmContract = acm as any;
     const vaultCardContract = vaultCard as any;
     const loanCoreContract = loanCore as any;
+    const poolFactoryContract = poolFactory as any;
 
     // Approve KYB status for store
     await acmContract.connect(admin).setKybStatus(store.address, true);
+
+    // Deploy a mock asset and create a valid lending pool for vault binding
+    const mockAsset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    await poolFactoryContract.connect(admin).createPool(
+      await mockAsset.getAddress(),
+      "Pool EURC",
+      "pEURC",
+      5000n,
+      7000n,
+      1000n,
+      500n
+    );
+    const poolAddr = await poolFactoryContract.getPool(await mockAsset.getAddress());
 
     // Mint card NFT to store
     const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
@@ -91,7 +105,7 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     await vaultCardContract.connect(minter).mintCard(store.address, cardTypeId, attestationHash, "ipfs://card1");
 
     // Store creates vault, approves loanCore, and deposits collateral
-    await loanCoreContract.connect(store).createVault();
+    await loanCoreContract.connect(store).createVault(poolAddr);
     const loanCoreAddr = await loanCore.getAddress();
     await vaultCardContract.connect(store).setApprovalForAll(loanCoreAddr, true);
 

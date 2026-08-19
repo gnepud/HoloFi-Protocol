@@ -15,6 +15,10 @@ describe("HoloFiLendingPool Integration Tests", function () {
       "HoloFi Pool EURC",
       "pEURC",
       await acm.getAddress(),
+      5000n,
+      7000n,
+      1000n,
+      500n,
     ]);
 
     const poolWeth = await ethers.deployContract("HoloFiLendingPool", [
@@ -22,6 +26,10 @@ describe("HoloFiLendingPool Integration Tests", function () {
       "HoloFi Pool WETH",
       "pWETH",
       await acm.getAddress(),
+      5000n,
+      7000n,
+      1000n,
+      500n,
     ]);
 
     await mockEurc.mint(lp.address, ethers.parseUnits("10000", 6));
@@ -32,6 +40,76 @@ describe("HoloFiLendingPool Integration Tests", function () {
 
     return { acm, mockEurc, mockWeth, poolEurc, poolWeth, owner, admin, lp, borrower, fakeLoanCore, unauthorized };
   }
+
+  it("Should initialize risk parameters and allow admin to update them with RiskParametersUpdated event", async function () {
+    const { poolEurc, admin } = await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    expect(await poolEurc.maxLtvBps()).to.equal(5000n);
+    expect(await poolEurc.liquidationThresholdBps()).to.equal(7000n);
+    expect(await poolEurc.liquidationPenaltyBps()).to.equal(1000n);
+    expect(await poolEurc.borrowRateBpsPerYear()).to.equal(500n);
+
+    await expect(poolEurc.connect(admin).setRiskParameters(4000n, 6000n, 1200n, 600n))
+      .to.emit(poolEurc, "RiskParametersUpdated")
+      .withArgs(4000n, 6000n, 1200n, 600n);
+
+    expect(await poolEurc.maxLtvBps()).to.equal(4000n);
+    expect(await poolEurc.liquidationThresholdBps()).to.equal(6000n);
+    expect(await poolEurc.liquidationPenaltyBps()).to.equal(1200n);
+    expect(await poolEurc.borrowRateBpsPerYear()).to.equal(600n);
+  });
+
+  it("Should revert setRiskParameters for unauthorized caller with UnauthorizedAdmin", async function () {
+    const { poolEurc, unauthorized } = await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    await expect(
+      poolEurc.connect(unauthorized).setRiskParameters(4000n, 6000n, 1200n, 600n)
+    ).to.be.revertedWithCustomError(poolEurc, "UnauthorizedAdmin")
+     .withArgs(unauthorized.address);
+  });
+
+  it("Should revert setRiskParameters and constructor when risk parameters are invalid", async function () {
+    const { poolEurc, admin, mockEurc, acm } = await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    // maxLtvBps > liquidationThresholdBps
+    await expect(
+      poolEurc.connect(admin).setRiskParameters(7001n, 7000n, 1000n, 500n)
+    ).to.be.revertedWithCustomError(poolEurc, "InvalidRiskParameters");
+
+    // liquidationThresholdBps > 10000
+    await expect(
+      poolEurc.connect(admin).setRiskParameters(5000n, 10001n, 1000n, 500n)
+    ).to.be.revertedWithCustomError(poolEurc, "InvalidRiskParameters");
+
+    // Constructor validation: maxLtv > lt
+    const HoloFiLendingPool = await ethers.getContractFactory("HoloFiLendingPool");
+    await expect(
+      ethers.deployContract("HoloFiLendingPool", [
+        await mockEurc.getAddress(),
+        "Invalid Pool",
+        "pINV",
+        await acm.getAddress(),
+        7500n,
+        7000n,
+        1000n,
+        500n,
+      ])
+    ).to.be.revertedWithCustomError(HoloFiLendingPool, "InvalidRiskParameters");
+
+    // Constructor validation: lt > 10000
+    await expect(
+      ethers.deployContract("HoloFiLendingPool", [
+        await mockEurc.getAddress(),
+        "Invalid Pool",
+        "pINV",
+        await acm.getAddress(),
+        5000n,
+        10001n,
+        1000n,
+        500n,
+      ])
+    ).to.be.revertedWithCustomError(HoloFiLendingPool, "InvalidRiskParameters");
+  });
 
   it("Should allow LPs to deposit EURC/WETH and receive corresponding pToken shares", async function () {
     const { mockEurc, mockWeth, poolEurc, poolWeth, lp } = await networkHelpers.loadFixture(deployLendingPoolFixture);

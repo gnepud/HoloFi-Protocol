@@ -52,14 +52,22 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     const { loanCore, vaultCard, priceFeed, dutchAuction, poolFactory, admin, store, minter, liquidator, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployDutchAuctionFixture);
 
     const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
-    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
+    await poolFactory.connect(admin).createPool(
+      await asset.getAddress(),
+      "Pool EURC",
+      "pEURC",
+      5000n, // maxLtvBps
+      7000n, // liquidationThresholdBps
+      1000n, // liquidationPenaltyBps
+      0n     // borrowRateBpsPerYear
+    );
     const poolAddr = await poolFactory.getPool(await asset.getAddress());
     const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
 
     await pool.connect(admin).setLoanCore(await loanCore.getAddress());
     await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
 
-    await loanCore.connect(store).createVault();
+    await loanCore.connect(store).createVault(poolAddr);
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
@@ -68,10 +76,8 @@ describe("HoloFiDutchAuction Integration Tests", function () {
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
-    await loanCore.connect(admin).setRiskParameters(5000n, 7000n, 1000n, 0n);
-
     // Borrow $4,000 (total FMV = $10,000, max borrow = $5,000)
-    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6));
 
     // Oracle drops card FMV so HF < 1.0 (card 1 dropped to $1,000, total FMV = $5,000)
     await priceFeed.connect(minter).setBatchPrices(
@@ -97,7 +103,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     // Surplus = $5,200 - $4,400 = $800
     await networkHelpers.time.setNextBlockTimestamp(auctionStartTime + 86400n);
 
-    await expect(dutchAuction.connect(liquidator).settleAuction(1n, poolAddr))
+    await expect(dutchAuction.connect(liquidator).settleAuction(1n))
       .to.emit(dutchAuction, "AuctionSettled")
       .withArgs(
         1n,
@@ -138,14 +144,22 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     expect(await dutchAuction.treasury()).to.equal(treasury.address);
 
     const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
-    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
+    await poolFactory.connect(admin).createPool(
+      await asset.getAddress(),
+      "Pool EURC",
+      "pEURC",
+      5000n, // maxLtvBps
+      7000n, // liquidationThresholdBps
+      1000n, // liquidationPenaltyBps
+      0n     // borrowRateBpsPerYear
+    );
     const poolAddr = await poolFactory.getPool(await asset.getAddress());
     const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
 
     await pool.connect(admin).setLoanCore(await loanCore.getAddress());
     await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
 
-    await loanCore.connect(store).createVault();
+    await loanCore.connect(store).createVault(poolAddr);
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
@@ -154,8 +168,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
-    await loanCore.connect(admin).setRiskParameters(5000n, 7000n, 1000n, 0n);
-    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6));
 
     // Drop FMV so HF < 1.0
     await priceFeed.connect(minter).setBatchPrices(
@@ -167,19 +180,19 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     await dutchAuction.connect(liquidator).startAuction(1n);
 
     // Attempt premature buyback before 48h expiration -> revert AuctionNotExpired
-    await expect(dutchAuction.connect(treasury).treasuryBuyback(1n, poolAddr))
+    await expect(dutchAuction.connect(treasury).treasuryBuyback(1n))
       .to.be.revertedWithCustomError(dutchAuction, "AuctionNotExpired");
 
     // Attempt buyback by unauthorized caller -> revert UnauthorizedTreasury
     await networkHelpers.time.increase(49 * 3600);
-    await expect(dutchAuction.connect(unauthorized).treasuryBuyback(1n, poolAddr))
+    await expect(dutchAuction.connect(unauthorized).treasuryBuyback(1n))
       .to.be.revertedWithCustomError(dutchAuction, "UnauthorizedTreasury");
 
     // Treasury executes buyback
     await asset.mint(treasury.address, ethers.parseUnits("4000", 6));
     await asset.connect(treasury).approve(auctionAddr, ethers.parseUnits("4000", 6));
 
-    await expect(dutchAuction.connect(treasury).treasuryBuyback(1n, poolAddr))
+    await expect(dutchAuction.connect(treasury).treasuryBuyback(1n))
       .to.emit(dutchAuction, "TreasuryBuybackExecuted")
       .withArgs(1n, treasury.address, poolAddr, ethers.parseUnits("4000", 6));
 
@@ -196,4 +209,3 @@ describe("HoloFiDutchAuction Integration Tests", function () {
   });
 
 });
-

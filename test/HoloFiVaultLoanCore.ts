@@ -38,7 +38,38 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     await vaultCard.connect(minter).mintCard(store.address, cardTypeId1, attestationHash1, "ipfs://card1");
     await vaultCard.connect(minter).mintCard(store.address, cardTypeId2, attestationHash2, "ipfs://card2");
 
-    return { acm, vaultCard, poolFactory, priceFeed, loanCore, owner, admin, minter, store, unauthorized, cardTypeId1, cardTypeId2 };
+    const eurc = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    await poolFactory.connect(admin).createPool(
+      await eurc.getAddress(),
+      "Pool EURC",
+      "pEURC",
+      5000n,
+      7000n,
+      1000n,
+      500n
+    );
+    const poolEurcAddr = await poolFactory.getPool(await eurc.getAddress());
+    const poolEurc = await ethers.getContractAt("HoloFiLendingPool", poolEurcAddr);
+    await poolEurc.connect(admin).setLoanCore(await loanCore.getAddress());
+    await eurc.mint(poolEurcAddr, ethers.parseUnits("100000", 6));
+
+    return {
+      acm,
+      vaultCard,
+      poolFactory,
+      priceFeed,
+      loanCore,
+      eurc,
+      poolEurc,
+      poolEurcAddr,
+      owner,
+      admin,
+      minter,
+      store,
+      unauthorized,
+      cardTypeId1,
+      cardTypeId2,
+    };
   }
 
   it("Should revert constructor with zero address priceFeed", async function () {
@@ -57,13 +88,13 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
   });
 
   it("Should allow KYB approved store to create vault and escrow/withdraw cards", async function () {
-    const { vaultCard, loanCore, store } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    const { vaultCard, loanCore, store, poolEurcAddr } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     const loanCoreAddr = await loanCore.getAddress();
 
-    await expect(loanCore.connect(store).createVault())
+    await expect(loanCore.connect(store).createVault(poolEurcAddr))
       .to.emit(loanCore, "VaultCreated")
-      .withArgs(1n, store.address);
+      .withArgs(1n, store.address, poolEurcAddr);
 
     await vaultCard.connect(store).setApprovalForAll(loanCoreAddr, true);
 
@@ -92,61 +123,92 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
   });
 
   it("Should revert when non-KYB store attempts to create vault", async function () {
-    const { loanCore, unauthorized } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    const { loanCore, unauthorized, poolEurcAddr } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     await expect(
-      loanCore.connect(unauthorized).createVault()
+      loanCore.connect(unauthorized).createVault(poolEurcAddr)
     ).to.be.revertedWithCustomError(loanCore, "KybRequired")
      .withArgs(unauthorized.address);
   });
 
-  it("Should allow admin to update risk parameters and revert for unauthorized user", async function () {
-    const { loanCore, admin, unauthorized } = await networkHelpers.loadFixture(deployLoanCoreFixture);
-
-    await expect(loanCore.connect(admin).setRiskParameters(4000n, 6000n, 1200n, 600n))
-      .to.emit(loanCore, "RiskParametersUpdated")
-      .withArgs(4000n, 6000n, 1200n, 600n);
-
-    expect(await loanCore.maxLtvBps()).to.equal(4000n);
-    expect(await loanCore.liquidationThresholdBps()).to.equal(6000n);
-    expect(await loanCore.liquidationPenaltyBps()).to.equal(1200n);
-    expect(await loanCore.borrowRateBpsPerYear()).to.equal(600n);
+  it("Should revert when creating vault with unregistered lending pool", async function () {
+    const { loanCore, store, unauthorized } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
     await expect(
-      loanCore.connect(unauthorized).setRiskParameters(4000n, 6000n, 1200n, 600n)
-    ).to.be.revertedWithCustomError(loanCore, "UnauthorizedAdmin")
+      loanCore.connect(store).createVault(unauthorized.address)
+    ).to.be.revertedWithCustomError(loanCore, "UnregisteredLendingPool")
      .withArgs(unauthorized.address);
   });
 
-  it("Should calculate max borrow capacity correctly", async function () {
-    const { loanCore } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+  it("Should enforce independent risk parameters across two distinct pools bound to different vaults", async function () {
+    const { loanCore, poolFactory, admin, store, poolEurcAddr } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    const weth = await ethers.deployContract("MockERC20", ["Wrapped Ether", "WETH", 18]);
+    await poolFactory.connect(admin).createPool(
+      await weth.getAddress(),
+      "Pool WETH",
+      "pWETH",
+      4000n, // 40% Max LTV
+      6000n, // 60% LT
+      1200n, // 12% Penalty
+      1000n  // 10% Borrow rate
+    );
+    const poolWethAddr = await poolFactory.getPool(await weth.getAddress());
+    const poolWeth = await ethers.getContractAt("HoloFiLendingPool", poolWethAddr);
+    await poolWeth.connect(admin).setLoanCore(await loanCore.getAddress());
+
+    // Vault 1 bound to EURC pool (50% max LTV, 70% LT)
+    await loanCore.connect(store).createVault(poolEurcAddr);
+
+    // Vault 2 bound to WETH pool (40% max LTV, 60% LT)
+    await loanCore.connect(store).createVault(poolWethAddr);
+
     const fmv = ethers.parseUnits("10000", 6);
-    expect(await loanCore.getMaxBorrowCapacity(fmv)).to.equal(ethers.parseUnits("5000", 6));
+
+    // Max borrow capacity check
+    expect(await loanCore.getMaxBorrowCapacity(1n, fmv)).to.equal(ethers.parseUnits("5000", 6));
+    expect(await loanCore.getMaxBorrowCapacity(2n, fmv)).to.equal(ethers.parseUnits("4000", 6));
+
+    // Zero debt health factor check
+    expect(await loanCore.getHealthFactor(1n, fmv)).to.equal(ethers.MaxUint256);
+    expect(await loanCore.getHealthFactor(2n, fmv)).to.equal(ethers.MaxUint256);
+  });
+
+  it("Should calculate max borrow capacity correctly", async function () {
+    const { loanCore, store, poolEurcAddr } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    await loanCore.connect(store).createVault(poolEurcAddr);
+    const fmv = ethers.parseUnits("10000", 6);
+    expect(await loanCore.getMaxBorrowCapacity(1n, fmv)).to.equal(ethers.parseUnits("5000", 6));
   });
 
   it("Should calculate health factor correctly for zero debt and active debt", async function () {
-    const { loanCore } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    const { loanCore, store, poolEurcAddr, vaultCard, priceFeed, minter, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    await loanCore.connect(store).createVault(poolEurcAddr);
+    await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
+
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
+      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+    );
+
     const fmv = ethers.parseUnits("10000", 6);
 
-    const zeroDebtHf = await loanCore.calculateHealthFactor(fmv, 0n);
+    const zeroDebtHf = await loanCore.getHealthFactor(1n, fmv);
     expect(zeroDebtHf).to.equal(ethers.MaxUint256);
 
-    const safeHf = await loanCore.calculateHealthFactor(fmv, ethers.parseUnits("5000", 6));
+    // Borrow 5000 EURC
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("5000", 6));
+
+    // HF = (10000 * 7000 * 1e18) / (5000 * 10000) = 1.4e18
+    const safeHf = await loanCore.getHealthFactor(1n, fmv);
     expect(safeHf).to.equal(ethers.parseEther("1.4"));
   });
 
-  it("Should allow oracle to set card FMVs, calculate vault FMV, and execute borrow from lending pool", async function () {
-    const { loanCore, vaultCard, priceFeed, admin, store, minter, poolFactory, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+  it("Should allow oracle to set card FMVs, calculate vault FMV, and execute borrow from bound lending pool", async function () {
+    const { loanCore, vaultCard, priceFeed, store, minter, poolEurcAddr, eurc, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
-    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
-    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
-    const poolAddr = await poolFactory.getPool(await asset.getAddress());
-    const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
-
-    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
-    await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
-
-    await loanCore.connect(store).createVault();
+    await loanCore.connect(store).createVault(poolEurcAddr);
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
@@ -159,33 +221,26 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
 
     const borrowAmount = ethers.parseUnits("4000", 6);
 
-    await expect(loanCore.connect(store).borrow(1n, borrowAmount, poolAddr))
+    await expect(loanCore.connect(store).borrow(1n, borrowAmount))
       .to.emit(loanCore, "BorrowExecuted")
-      .withArgs(1n, store.address, poolAddr, borrowAmount, borrowAmount);
+      .withArgs(1n, store.address, poolEurcAddr, borrowAmount, borrowAmount);
 
-    expect(await asset.balanceOf(store.address)).to.equal(borrowAmount);
-    expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("96000", 6));
+    expect(await eurc.balanceOf(store.address)).to.equal(borrowAmount);
+    expect(await eurc.balanceOf(poolEurcAddr)).to.equal(ethers.parseUnits("96000", 6));
 
     const vaultInfo = await loanCore.getVault(1n);
     expect(vaultInfo.principalDebt).to.equal(borrowAmount);
+    expect(vaultInfo.lendingPool).to.equal(poolEurcAddr);
 
     await expect(
-      loanCore.connect(store).borrow(1n, ethers.parseUnits("2000", 6), poolAddr)
+      loanCore.connect(store).borrow(1n, ethers.parseUnits("2000", 6))
     ).to.be.revertedWithCustomError(loanCore, "ExceedsMaxBorrowCapacity");
   });
 
   it("Should allow store to execute full loan repayment and release collateral NFTs", async function () {
-    const { loanCore, vaultCard, priceFeed, admin, store, minter, poolFactory, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    const { loanCore, vaultCard, priceFeed, store, minter, poolEurcAddr, eurc, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
-    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
-    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
-    const poolAddr = await poolFactory.getPool(await asset.getAddress());
-    const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
-
-    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
-    await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
-
-    await loanCore.connect(store).createVault();
+    await loanCore.connect(store).createVault(poolEurcAddr);
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
@@ -194,23 +249,23 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
-    const borrowTx = await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
+    const borrowTx = await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6));
     const borrowBlock = await ethers.provider.getBlock(borrowTx.blockNumber!);
     const borrowTimestamp = borrowBlock!.timestamp;
 
-    await asset.mint(store.address, ethers.parseUnits("200", 6));
-    await asset.connect(store).approve(poolAddr, ethers.MaxUint256);
+    await eurc.mint(store.address, ethers.parseUnits("200", 6));
+    await eurc.connect(store).approve(poolEurcAddr, ethers.MaxUint256);
 
     await networkHelpers.time.setNextBlockTimestamp(borrowTimestamp + 86400 * 365);
 
     const totalDebt = ethers.parseUnits("4200", 6);
 
-    await expect(loanCore.connect(store).repay(1n, totalDebt, poolAddr))
+    await expect(loanCore.connect(store).repay(1n, totalDebt))
       .to.emit(loanCore, "RepaymentExecuted")
       .withArgs(
         1n,
         store.address,
-        poolAddr,
+        poolEurcAddr,
         totalDebt,
         ethers.parseUnits("200", 6),
         ethers.parseUnits("4000", 6),
@@ -221,7 +276,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     const vaultInfo = await loanCore.getVault(1n);
     expect(vaultInfo.principalDebt).to.equal(0n);
     expect(vaultInfo.accumulatedInterest).to.equal(0n);
-    expect(await asset.balanceOf(poolAddr)).to.equal(ethers.parseUnits("100200", 6));
+    expect(await eurc.balanceOf(poolEurcAddr)).to.equal(ethers.parseUnits("100200", 6));
 
     await expect(loanCore.connect(store).withdrawCollateral(1n, [1n, 2n]))
       .to.emit(loanCore, "CollateralWithdrawn")
@@ -236,34 +291,10 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     expect(card2Info.isLocked).to.be.false;
   });
 
-  it("Should revert borrow or repay with UnregisteredLendingPool for unapproved pool address", async function () {
-    const { loanCore, store, unauthorized } = await networkHelpers.loadFixture(deployLoanCoreFixture);
-
-    await loanCore.connect(store).createVault();
-
-    await expect(
-      loanCore.connect(store).borrow(1n, 1000n, unauthorized.address)
-    ).to.be.revertedWithCustomError(loanCore, "UnregisteredLendingPool")
-     .withArgs(unauthorized.address);
-
-    await expect(
-      loanCore.connect(store).repay(1n, 1000n, unauthorized.address)
-    ).to.be.revertedWithCustomError(loanCore, "UnregisteredLendingPool")
-     .withArgs(unauthorized.address);
-  });
-
   it("Should allow store to withdraw excess collateral when remaining FMV satisfies LTV ratio", async function () {
-    const { loanCore, vaultCard, priceFeed, admin, store, minter, poolFactory, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    const { loanCore, vaultCard, priceFeed, store, minter, poolEurcAddr, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
-    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
-    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
-    const poolAddr = await poolFactory.getPool(await asset.getAddress());
-    const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
-
-    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
-    await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
-
-    await loanCore.connect(store).createVault();
+    await loanCore.connect(store).createVault(poolEurcAddr);
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
@@ -273,7 +304,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     );
 
     // Borrow $2,500 (total FMV = $10,000, max borrow = $5,000)
-    await loanCore.connect(store).borrow(1n, ethers.parseUnits("2500", 6), poolAddr);
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("2500", 6));
 
     // Attempt to withdraw card 1 ($6,000 FMV). Remaining FMV = $4,000 (max borrow = $2,000). Debt = $2,500 -> reverts
     await expect(
@@ -287,17 +318,9 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
   });
 
   it("Should allow store to execute atomic repayAndWithdraw to reduce debt and free collateral", async function () {
-    const { loanCore, vaultCard, priceFeed, admin, store, minter, poolFactory, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
+    const { loanCore, vaultCard, priceFeed, store, minter, poolEurcAddr, eurc, cardTypeId1, cardTypeId2 } = await networkHelpers.loadFixture(deployLoanCoreFixture);
 
-    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
-    await poolFactory.connect(admin).createPool(await asset.getAddress(), "Pool EURC", "pEURC");
-    const poolAddr = await poolFactory.getPool(await asset.getAddress());
-    const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
-
-    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
-    await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
-
-    await loanCore.connect(store).createVault();
+    await loanCore.connect(store).createVault(poolEurcAddr);
     await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
     await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
 
@@ -306,14 +329,14 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
     );
 
-    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6), poolAddr);
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6));
 
-    await asset.mint(store.address, ethers.parseUnits("2001", 6));
-    await asset.connect(store).approve(poolAddr, ethers.parseUnits("2001", 6));
+    await eurc.mint(store.address, ethers.parseUnits("2001", 6));
+    await eurc.connect(store).approve(poolEurcAddr, ethers.parseUnits("2001", 6));
 
     // Repay $2,000 + accrued interest and withdraw card 1 ($6,000 FMV). Remaining debt <= $2,000, remaining FMV = $4,000 (max borrow = $2,000) -> succeeds
     const repayAmount = ethers.parseUnits("2000", 6) + 100n;
-    await loanCore.connect(store).repayAndWithdraw(1n, repayAmount, poolAddr, [1n]);
+    await loanCore.connect(store).repayAndWithdraw(1n, repayAmount, [1n]);
 
     expect(await vaultCard.ownerOf(1n)).to.equal(store.address);
 
@@ -321,5 +344,3 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     expect(vaultInfo.principalDebt).to.be.lte(ethers.parseUnits("2000", 6));
   });
 });
-
-
