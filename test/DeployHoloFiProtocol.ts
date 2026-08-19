@@ -90,7 +90,7 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     const mockAsset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
     await poolFactoryContract.connect(admin).createPool(
       await mockAsset.getAddress(),
-      "Pool EURC",
+      "Premium Pool EURC",
       "pEURC",
       5000n,
       7000n,
@@ -119,10 +119,10 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     expect(cardInfo.isLocked).to.be.true;
   });
 
-  it("Should deploy full protocol with mock token lending pool via DeployHoloFiFullProtocol", async function () {
+  it("Should deploy full protocol with 2 default mock pools (Premium & Deluxe) via DeployHoloFiFullProtocol", async function () {
     const [admin, oracleFeeder, minter, treasury] = await ethers.getSigners();
 
-    const { loanCore, poolFactory, lendingPool, mockAsset } = await ignition.deploy(
+    const { loanCore, poolFactory, premiumLendingPool, deluxeLendingPool, mockAsset } = await ignition.deploy(
       DeployHoloFiFullProtocol,
       {
         parameters: {
@@ -132,41 +132,69 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
             treasury: treasury.address,
           },
           DeployHoloFiLendingPoolWithMock: {
-            mockMintAmount: 1000000000000n,
-            poolName: "Pool EURC",
-            poolSymbol: "pEURC",
+            mockMintAmount: 10_000_000_000_000n, // 10,000,000 EURC
           },
         },
       }
     );
 
-    const lendingPoolAddr = await lendingPool.getAddress();
+    const premiumPoolAddr = await premiumLendingPool.getAddress();
+    const deluxePoolAddr = await deluxeLendingPool.getAddress();
     const mockAssetAddr = await mockAsset.getAddress();
     const loanCoreAddr = await loanCore.getAddress();
     const DEAD_ADDRESS = "0x000000000000000000000000000000000000dEaD";
 
-    expect(lendingPoolAddr).to.not.equal(ethers.ZeroAddress);
-    expect(mockAssetAddr).to.not.equal(ethers.ZeroAddress);
-    expect(await poolFactory.isValidPool(lendingPoolAddr)).to.be.true;
-    expect(await (lendingPool as any).loanCore()).to.equal(loanCoreAddr);
-    expect(await (mockAsset as any).balanceOf(lendingPoolAddr)).to.equal(1_000_000_000_000n);
+    expect(premiumPoolAddr).to.not.equal(ethers.ZeroAddress);
+    expect(deluxePoolAddr).to.not.equal(ethers.ZeroAddress);
+    expect(premiumPoolAddr).to.not.equal(deluxePoolAddr);
 
-    // Verify ERC-4626 balanced accounting and locked seed liquidity
-    expect(await (lendingPool as any).totalAssets()).to.equal(1_000_000_000_000n);
-    expect(await (lendingPool as any).totalSupply()).to.equal(1_000_000_000_000n);
-    expect(await (lendingPool as any).balanceOf(DEAD_ADDRESS)).to.equal(1_000_000_000_000n);
+    expect(await poolFactory.isValidPool(premiumPoolAddr)).to.be.true;
+    expect(await poolFactory.isValidPool(deluxePoolAddr)).to.be.true;
 
-    // Verify subsequent user deposit receives exact 1:1 shares
+    // Verify Premium Pool parameters
+    const premiumContract = premiumLendingPool as any;
+    expect(await premiumContract.name()).to.equal("Premium Pool EURC");
+    expect(await premiumContract.symbol()).to.equal("pEURC");
+    expect(await premiumContract.maxLtvBps()).to.equal(5000n);
+    expect(await premiumContract.liquidationThresholdBps()).to.equal(7000n);
+    expect(await premiumContract.liquidationPenaltyBps()).to.equal(1000n);
+    expect(await premiumContract.borrowRateBpsPerYear()).to.equal(500n);
+    expect(await premiumContract.loanCore()).to.equal(loanCoreAddr);
+
+    // Verify Deluxe Pool parameters
+    const deluxeContract = deluxeLendingPool as any;
+    expect(await deluxeContract.name()).to.equal("Deluxe Pool EURC");
+    expect(await deluxeContract.symbol()).to.equal("dEURC");
+    expect(await deluxeContract.maxLtvBps()).to.equal(4000n);
+    expect(await deluxeContract.liquidationThresholdBps()).to.equal(7000n);
+    expect(await deluxeContract.liquidationPenaltyBps()).to.equal(1000n);
+    expect(await deluxeContract.borrowRateBpsPerYear()).to.equal(800n);
+    expect(await deluxeContract.loanCore()).to.equal(loanCoreAddr);
+
+    // Verify 10M EURC total split evenly (5M EURC in each pool)
+    expect(await (mockAsset as any).balanceOf(premiumPoolAddr)).to.equal(5_000_000_000_000n);
+    expect(await (mockAsset as any).balanceOf(deluxePoolAddr)).to.equal(5_000_000_000_000n);
+
+    // Verify ERC-4626 balanced accounting and locked seed liquidity in both pools
+    expect(await premiumContract.totalAssets()).to.equal(5_000_000_000_000n);
+    expect(await premiumContract.totalSupply()).to.equal(5_000_000_000_000n);
+    expect(await premiumContract.balanceOf(DEAD_ADDRESS)).to.equal(5_000_000_000_000n);
+
+    expect(await deluxeContract.totalAssets()).to.equal(5_000_000_000_000n);
+    expect(await deluxeContract.totalSupply()).to.equal(5_000_000_000_000n);
+    expect(await deluxeContract.balanceOf(DEAD_ADDRESS)).to.equal(5_000_000_000_000n);
+
+    // Verify subsequent user deposit receives exact 1:1 shares in Premium Pool
     const [_, __, ___, ____, lpUser] = await ethers.getSigners();
     const userDepositAmount = 1_000_000_000n; // 1,000 EURC
     await (mockAsset as any).mint(lpUser.address, userDepositAmount);
-    await (mockAsset as any).connect(lpUser).approve(lendingPoolAddr, userDepositAmount);
-    await (lendingPool as any).connect(lpUser).deposit(userDepositAmount, lpUser.address);
+    await (mockAsset as any).connect(lpUser).approve(premiumPoolAddr, userDepositAmount);
+    await premiumContract.connect(lpUser).deposit(userDepositAmount, lpUser.address);
 
-    expect(await (lendingPool as any).balanceOf(lpUser.address)).to.equal(userDepositAmount);
+    expect(await premiumContract.balanceOf(lpUser.address)).to.equal(userDepositAmount);
   });
 
-  it("Should deploy lending pool targeting an existing ERC20 asset via DeployHoloFiLendingPool", async function () {
+  it("Should deploy 2 default lending pools targeting an existing ERC20 asset via DeployHoloFiLendingPool", async function () {
     const [admin, oracleFeeder, minter, treasury] = await ethers.getSigners();
 
     const MockERC20 = await ethers.getContractFactory("MockERC20");
@@ -174,7 +202,7 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     await existingAsset.waitForDeployment();
     const assetAddr = await existingAsset.getAddress();
 
-    const { loanCore, poolFactory, lendingPool } = await ignition.deploy(
+    const { loanCore, poolFactory, premiumLendingPool, deluxeLendingPool } = await ignition.deploy(
       DeployHoloFiLendingPool,
       {
         parameters: {
@@ -185,18 +213,20 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
           },
           DeployHoloFiLendingPool: {
             existingAssetAddress: assetAddr,
-            poolName: "Pool eEURC",
-            poolSymbol: "peEURC",
           },
         },
       }
     );
 
-    const lendingPoolAddr = await lendingPool.getAddress();
+    const premiumPoolAddr = await premiumLendingPool.getAddress();
+    const deluxePoolAddr = await deluxeLendingPool.getAddress();
     const loanCoreAddr = await loanCore.getAddress();
 
-    expect(await poolFactory.getPool(assetAddr)).to.equal(lendingPoolAddr);
-    expect(await (lendingPool as any).loanCore()).to.equal(loanCoreAddr);
-    expect(await (lendingPool as any).asset()).to.equal(assetAddr);
+    expect(await poolFactory.isValidPool(premiumPoolAddr)).to.be.true;
+    expect(await poolFactory.isValidPool(deluxePoolAddr)).to.be.true;
+    expect(await (premiumLendingPool as any).loanCore()).to.equal(loanCoreAddr);
+    expect(await (premiumLendingPool as any).asset()).to.equal(assetAddr);
+    expect(await (deluxeLendingPool as any).loanCore()).to.equal(loanCoreAddr);
+    expect(await (deluxeLendingPool as any).asset()).to.equal(assetAddr);
   });
 });

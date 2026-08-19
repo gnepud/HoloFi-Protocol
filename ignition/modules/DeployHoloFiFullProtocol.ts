@@ -8,6 +8,8 @@ const DeployHoloFiFullProtocol = buildModule("DeployHoloFiFullProtocol", (m) => 
 
   return {
     ...protocol,
+    premiumLendingPool: poolModule.premiumLendingPool,
+    deluxeLendingPool: poolModule.deluxeLendingPool,
     lendingPool: poolModule.lendingPool,
     mockAsset: poolModule.mockAsset,
   };
