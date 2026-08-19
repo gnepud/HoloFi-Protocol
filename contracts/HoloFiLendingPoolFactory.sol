@@ -7,11 +7,12 @@ import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 
 /**
  * @title HoloFiLendingPoolFactory
- * @notice Factory for deploying and registering permissioned HoloFiLendingPool instances per underlying asset.
+ * @notice Factory for deploying and registering permissioned HoloFiLendingPool instances.
  */
 contract HoloFiLendingPoolFactory {
     AccessControlManager public immutable acm;
     mapping(address => address) public getPool;
+    mapping(address => address[]) public poolsByAsset;
     mapping(address => bool) public isValidPool;
     address[] public allPools;
 
@@ -19,7 +20,6 @@ contract HoloFiLendingPoolFactory {
 
     error ZeroAddressACM();
     error ZeroAddressAsset();
-    error PoolAlreadyExists(address underlyingAsset, address existingPool);
     error UnauthorizedOperator(address caller);
 
     constructor(address _acm) {
@@ -44,10 +44,6 @@ contract HoloFiLendingPoolFactory {
         if (address(asset) == address(0)) {
             revert ZeroAddressAsset();
         }
-        address existingPool = getPool[address(asset)];
-        if (existingPool != address(0)) {
-            revert PoolAlreadyExists(address(asset), existingPool);
-        }
 
         HoloFiLendingPool poolContract = new HoloFiLendingPool(
             asset,
@@ -61,11 +57,22 @@ contract HoloFiLendingPoolFactory {
         );
         pool = address(poolContract);
 
-        getPool[address(asset)] = pool;
+        if (getPool[address(asset)] == address(0)) {
+            getPool[address(asset)] = pool;
+        }
+        poolsByAsset[address(asset)].push(pool);
         isValidPool[pool] = true;
         allPools.push(pool);
 
         emit PoolCreated(address(asset), pool, name, symbol);
+    }
+
+    function getPoolsByAsset(address asset) external view returns (address[] memory) {
+        return poolsByAsset[asset];
+    }
+
+    function getPoolsByAssetLength(address asset) external view returns (uint256) {
+        return poolsByAsset[asset].length;
     }
 
     function allPoolsLength() external view returns (uint256) {

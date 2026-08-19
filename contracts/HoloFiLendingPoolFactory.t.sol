@@ -38,16 +38,17 @@ contract HoloFiLendingPoolFactoryTest is Test {
 
     function test_CreatePool_AdminSuccess() public {
         vm.prank(admin);
-        address poolAddr = factory.createPool(IERC20(address(eurc)), "HoloFi Pool EURC", "pEURC", 5000, 7000, 1000, 500);
+        address poolAddr = factory.createPool(IERC20(address(eurc)), "Premium Pool EURC", "pEURC", 5000, 7000, 1000, 500);
 
         assertTrue(poolAddr != address(0));
         assertEq(factory.getPool(address(eurc)), poolAddr);
         assertEq(factory.allPools(0), poolAddr);
         assertEq(factory.allPoolsLength(), 1);
+        assertEq(factory.getPoolsByAssetLength(address(eurc)), 1);
 
         HoloFiLendingPool pool = HoloFiLendingPool(poolAddr);
         assertEq(address(pool.asset()), address(eurc));
-        assertEq(pool.name(), "HoloFi Pool EURC");
+        assertEq(pool.name(), "Premium Pool EURC");
         assertEq(pool.symbol(), "pEURC");
         assertEq(pool.maxLtvBps(), 5000);
         assertEq(pool.liquidationThresholdBps(), 7000);
@@ -55,33 +56,44 @@ contract HoloFiLendingPoolFactoryTest is Test {
         assertEq(pool.borrowRateBpsPerYear(), 500);
     }
 
+    function test_CreateMultiplePools_SameAssetSuccess() public {
+        vm.startPrank(admin);
+        address premiumPoolAddr = factory.createPool(IERC20(address(eurc)), "Premium Pool EURC", "pEURC", 5000, 7000, 1000, 500);
+        address deluxePoolAddr = factory.createPool(IERC20(address(eurc)), "Deluxe Pool EURC", "dEURC", 4000, 7000, 1000, 800);
+        vm.stopPrank();
+
+        assertTrue(premiumPoolAddr != deluxePoolAddr);
+        assertEq(factory.getPool(address(eurc)), premiumPoolAddr); // First pool is default lookup
+        assertEq(factory.getPoolsByAssetLength(address(eurc)), 2);
+        assertEq(factory.allPoolsLength(), 2);
+
+        address[] memory eurcPools = factory.getPoolsByAsset(address(eurc));
+        assertEq(eurcPools.length, 2);
+        assertEq(eurcPools[0], premiumPoolAddr);
+        assertEq(eurcPools[1], deluxePoolAddr);
+
+        assertTrue(factory.isValidPool(premiumPoolAddr));
+        assertTrue(factory.isValidPool(deluxePoolAddr));
+
+        HoloFiLendingPool deluxePool = HoloFiLendingPool(deluxePoolAddr);
+        assertEq(deluxePool.name(), "Deluxe Pool EURC");
+        assertEq(deluxePool.symbol(), "dEURC");
+        assertEq(deluxePool.maxLtvBps(), 4000);
+        assertEq(deluxePool.borrowRateBpsPerYear(), 800);
+    }
+
     function test_RevertIf_UnauthorizedCreatePool() public {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(HoloFiLendingPoolFactory.UnauthorizedOperator.selector, user)
         );
-        factory.createPool(IERC20(address(eurc)), "HoloFi Pool EURC", "pEURC", 5000, 7000, 1000, 500);
+        factory.createPool(IERC20(address(eurc)), "Premium Pool EURC", "pEURC", 5000, 7000, 1000, 500);
     }
 
     function test_RevertIf_CreatePool_ZeroAddressAsset() public {
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPoolFactory.ZeroAddressAsset.selector));
-        factory.createPool(IERC20(address(0)), "HoloFi Pool EURC", "pEURC", 5000, 7000, 1000, 500);
-    }
-
-    function test_RevertIf_CreatePool_AlreadyExists() public {
-        vm.prank(admin);
-        address existingPool = factory.createPool(IERC20(address(eurc)), "HoloFi Pool EURC", "pEURC", 5000, 7000, 1000, 500);
-
-        vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                HoloFiLendingPoolFactory.PoolAlreadyExists.selector,
-                address(eurc),
-                existingPool
-            )
-        );
-        factory.createPool(IERC20(address(eurc)), "HoloFi Pool EURC", "pEURC", 5000, 7000, 1000, 500);
+        factory.createPool(IERC20(address(0)), "Premium Pool EURC", "pEURC", 5000, 7000, 1000, 500);
     }
 
     function test_CreatePool_SetsIsValidPool() public {
