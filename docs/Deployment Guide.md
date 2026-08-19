@@ -47,7 +47,11 @@ To customize operational role addresses (`oracleFeeder`, `minter`, `treasury`) o
   "DeployHoloFiLendingPoolWithMock": {
     "mockMintAmount": "5000000000000",
     "poolName": "Pool EURC",
-    "poolSymbol": "pEURC"
+    "poolSymbol": "pEURC",
+    "maxLtvBps": "5000",
+    "liquidationThresholdBps": "7000",
+    "liquidationPenaltyBps": "1000",
+    "borrowRateBpsPerYear": "500"
   }
 }
 ```
@@ -76,7 +80,11 @@ When deploying to a public network (e.g. Sepolia, Base Sepolia) where a live ERC
   "DeployHoloFiLendingPool": {
     "existingAssetAddress": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
     "poolName": "HoloFi EURC Pool",
-    "poolSymbol": "pEURC"
+    "poolSymbol": "pEURC",
+    "maxLtvBps": "5000",
+    "liquidationThresholdBps": "7000",
+    "liquidationPenaltyBps": "1000",
+    "borrowRateBpsPerYear": "500"
   }
 }
 ```

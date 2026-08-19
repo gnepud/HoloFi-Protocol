@@ -146,10 +146,11 @@ enum VaultStatus { Active, Liquidating, Closed }
 struct CollateralVault {
     uint256 vaultId;
     address owner;                  // Store wallet address
+    address lendingPool;            // Pool bound during vault creation
     uint256[] tokenIds;             // List of deposited NFT token IDs (from global collection)
     uint256 principalDebt;          // Borrowed capital
     uint256 accumulatedInterest;    // Unpaid accrued interest
-    uint256 lastInterestUpdateTime;     // Timestamp of last interest calculation
+    uint256 lastInterestUpdateTime; // Timestamp of last interest calculation
     VaultStatus status;
 }
 
@@ -161,17 +162,14 @@ HoloFiCardPriceFeed public immutable priceFeed;
 mapping(uint256 => CollateralVault) public vaults;
 mapping(uint256 => uint256) public nftVaultId; // Fast lookup mapping (tokenId => vaultId)
 uint256 public nextVaultId = 1;
-uint256 public maxLtvBps = 5000;                // Max LTV: 50.00%
-uint256 public liquidationThresholdBps = 7000; // Liquidation Threshold: 70.00%
-uint256 public liquidationPenaltyBps = 1000;   // Liquidation Penalty: 10.00%
-uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
 ```
 
 #### B. KYB Control & Escrow Mechanics
 
 * **Vault Creation (`createVault`)**:
   - Restricted to KYB-approved store wallets (`acm.isKybApproved(msg.sender)`). Reverts with `KybRequired(msg.sender)` if unapproved.
-  - Assigns unique `vaultId = nextVaultId++` and sets `status = VaultStatus.Active`.
+  - Requires a valid, registered lending pool (`poolFactory.isValidPool(lendingPool)`). Reverts with `UnregisteredLendingPool(lendingPool)` if unapproved.
+  - Assigns unique `vaultId = nextVaultId++`, binds `vault.lendingPool = lendingPool`, and sets `status = VaultStatus.Active`.
 
 * **Escrow Deposit (`depositCollateral`)**:
   - Stores can add card NFTs to their active vault at any time.
@@ -183,37 +181,37 @@ uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
   - **Interest Accrual Guard**: Triggers `accrueInterest(vaultId)` **first**.
   - **Zero Debt vs Active Debt LTV Check**:
     - If total debt is 0 (`currentTotalDebt == 0`): Allows withdrawing any or all requested `tokenIds`.
-    - If active debt exists (`currentTotalDebt > 0`): Computes remaining collateral value `remainingFmv` after removing `tokenIds`. Verifies `currentTotalDebt <= getMaxBorrowCapacity(remainingFmv)`. Reverts with `InsufficientCollateralRatio` if the remaining collateral breaches safety thresholds.
+    - If active debt exists (`currentTotalDebt > 0`): Computes remaining collateral value `remainingFmv` after removing `tokenIds`. Verifies `currentTotalDebt <= getMaxBorrowCapacity(vaultId, remainingFmv)`. Reverts with `InsufficientCollateralRatio` if the remaining collateral breaches safety thresholds.
   - Unlocks cards via `vaultCard.setCardLock(tokenId, false)` and returns NFTs via `vaultCard.safeTransferFrom(address(this), vault.owner, tokenId)`.
   - Clears `nftVaultId[tokenId]` and removes token from `vault.tokenIds`.
 
 #### C. Risk Engine & Accounting Mechanics
 
-* **Configurable Risk Parameters (`setRiskParameters`)**:
-  - Restricted to `ADMIN_ROLE`. Configures `maxLtvBps`, `liquidationThresholdBps`, `liquidationPenaltyBps`, and `borrowRateBpsPerYear`. Reverts `InvalidRiskParameters()` if `maxLtvBps > liquidationThresholdBps`.
+* **Decentralized Pool-Level Risk Parameters**:
+  - Each `HoloFiLendingPool` defines and isolates its own 4 risk parameters (`maxLtvBps`, `liquidationThresholdBps`, `liquidationPenaltyBps`, and `borrowRateBpsPerYear`).
+  - Configurable by `ADMIN_ROLE` on each pool via `setRiskParameters(...)`. Reverts `InvalidRiskParameters()` if `maxLtvBps > liquidationThresholdBps` or `liquidationThresholdBps > 10000`.
 
 * **Continuous Interest Accrual (`accrueInterest`)**:
 
 $$\Delta t = \text{block.timestamp} - \text{lastInterestUpdateTime}$$
 
+$$\text{borrowRate} = \text{HoloFiLendingPool}(\text{vault.lendingPool}).\text{borrowRateBpsPerYear}()$$
 
-$$\text{Interest}_{\text{new}} = \frac{\text{principalDebt} \times \text{borrowRateBpsPerYear} \times \Delta t}{10000 \times 365\text{ days}}$$
-
+$$\text{Interest}_{\text{new}} = \frac{\text{principalDebt} \times \text{borrowRate} \times \Delta t}{10000 \times 365\text{ days}}$$
 
 $$\text{accumulatedInterest} \leftarrow \text{accumulatedInterest} + \text{Interest}_{\text{new}}$$
 
-
-* **Health Factor Engine (`calculateHealthFactor` / `getHealthFactor`)**:
-  - Calculates Health Factor scaled with `1e18` precision:
+* **Health Factor Engine (`getHealthFactor`)**:
+  - Calculates Health Factor scaled with `1e18` precision querying `liquidationThresholdBps` dynamically from `vault.lendingPool`:
 
 $$HF = \frac{\text{Vault FMV} \times \text{liquidationThresholdBps} \times 1\text{e}18}{\text{Total Debt} \times 10000}$$
 
   - Returns `type(uint256).max` if total debt is 0.
 
 * **Max Borrow Capacity (`getMaxBorrowCapacity`)**:
+  - Queries `maxLtvBps` dynamically from `vault.lendingPool`:
 
 $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
-
 
 #### D. Oracle Valuation, Pool Guard & Debt Settlement Mechanics
 
@@ -231,36 +229,43 @@ $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
   - Computes total collateral value by querying `cardTypeId = vaultCard.getCard(tokenId).cardTypeId` and calling `priceFeed.getPrice(cardTypeId)` across all deposited cards in `vaults[vaultId].tokenIds`.
 
 * **Credit Borrow Execution (`borrow`)**:
-  - **Pool Security Guard**: Verifies `poolFactory.isValidPool(lendingPool)`. Reverts `UnregisteredLendingPool(lendingPool)` if pool is not registered in factory.
   - Restricted to vault owner (`msg.sender == vault.owner`). Reverts `UnauthorizedVaultOwner` if unauthorized.
   - Requires active vault status (`VaultNotActive`) and non-zero borrow amount (`ZeroBorrowAmount`).
   - **Interest Accrual Guard**: Triggers `accrueInterest(vaultId)` **first** prior to state updates.
-  - **LTV Capacity Check**: Verifies `getTotalDebt(vaultId) + amount <= getMaxBorrowCapacity(getVaultFMV(vaultId))`. Reverts with `ExceedsMaxBorrowCapacity` if requested debt exceeds max LTV limit.
+  - **LTV Capacity Check**: Verifies `getTotalDebt(vaultId) + amount <= getMaxBorrowCapacity(vaultId, getVaultFMV(vaultId))`. Reverts with `ExceedsMaxBorrowCapacity` if requested debt exceeds max LTV limit.
   - Increases `vault.principalDebt += amount`.
-  - Executes `HoloFiLendingPool(lendingPool).drawLiquidity(vault.owner, amount)` to transfer underlying asset liquidity to store.
-  - Emits `BorrowExecuted(vaultId, vault.owner, lendingPool, amount, vault.principalDebt)`.
+  - Executes `HoloFiLendingPool(vault.lendingPool).drawLiquidity(vault.owner, amount)` to transfer underlying asset liquidity directly from the bound pool to store.
+  - Emits `BorrowExecuted(vaultId, vault.owner, vault.lendingPool, amount, vault.principalDebt)`.
 
 * **Debt Repayment (`repay`)**:
-  - **Pool Security Guard**: Verifies `poolFactory.isValidPool(lendingPool)`. Reverts `UnregisteredLendingPool(lendingPool)` if pool is not registered in factory.
   - Requires active vault status (`VaultNotActive`), non-zero amount (`ZeroRepayAmount`), and active debt (`NoActiveDebt`).
   - **Interest Accrual Guard**: Triggers `accrueInterest(vaultId)` **first**.
   - **Waterfall Allocation**: Pays off `accumulatedInterest` first, then reduces `principalDebt`. Caps repayment at total active debt.
-  - Calls `HoloFiLendingPool(lendingPool).returnLiquidity(msg.sender, actualRepay)` to transfer funds from payer into lending pool.
-  - Emits `RepaymentExecuted(vaultId, msg.sender, lendingPool, actualRepay, interestPaid, principalPaid, vault.principalDebt, vault.accumulatedInterest)`.
+  - Calls `HoloFiLendingPool(vault.lendingPool).returnLiquidity(msg.sender, actualRepay)` to transfer funds from payer into bound lending pool.
+  - Emits `RepaymentExecuted(vaultId, msg.sender, vault.lendingPool, actualRepay, interestPaid, principalPaid, vault.principalDebt, vault.accumulatedInterest)`.
 
 * **Atomic Repay & Withdraw (`repayAndWithdraw`)**:
   - Allows stores to pay down debt and release specific card NFTs in a single transaction.
   - **Authorization Guard**: Explicitly verifies `vaults[vaultId].owner == msg.sender` if `withdrawTokenIds.length > 0` before executing repayment or withdrawal.
-  - Atomically calls `repay(vaultId, repayAmount, lendingPool)` and `withdrawCollateral(vaultId, withdrawTokenIds)`.
+  - Atomically calls `repay(vaultId, repayAmount)` and `withdrawCollateral(vaultId, withdrawTokenIds)`.
 
 ---
 
 ### 3.4. Multi-Asset Pool Factory & Liquidity Pools: `HoloFiLendingPoolFactory` & `HoloFiLendingPool`
 
-* **Factory Registry & Pool Verification (`HoloFiLendingPoolFactory`)**:
-  - Maintains `mapping(address => address) public getPool` and `mapping(address => bool) public isValidPool`.
-  - Admin/Oracle deploys permissioned `HoloFiLendingPool` instances per ERC-20 asset via `createPool()`.
+### 3.4. Multi-Asset Pool Factory & Liquidity Pools: `HoloFiLendingPoolFactory` & `HoloFiLendingPool`
+
+* **Multi-Asset Pool Factory (`HoloFiLendingPoolFactory`)**:
+  - Centralized factory for deploying and registering permissioned `HoloFiLendingPool` instances.
+  - Pool deployment via `createPool(IERC20 asset, string calldata name, string calldata symbol, uint256 maxLtvBps, uint256 liquidationThresholdBps, uint256 liquidationPenaltyBps, uint256 borrowRateBpsPerYear)` is restricted to `ADMIN_ROLE` in `AccessControlManager`.
+  - Maintains an on-chain lookup mapping `mapping(address => address) public getPool` (`underlyingAsset => poolAddress`), `mapping(address => bool) public isValidPool`, and array `address[] public allPools`.
+  - Prevents duplicate pool creation per underlying asset, reverting with `PoolAlreadyExists(underlyingAsset, existingPool)`.
   - Automatically marks `isValidPool[pool] = true` upon instantiation for protocol security verification.
+
+* **Permissioned ERC-4626 Lending Pool (`HoloFiLendingPool`)**:
+  - Encapsulates risk parameters (`maxLtvBps`, `liquidationThresholdBps`, `liquidationPenaltyBps`, `borrowRateBpsPerYear`) per asset.
+  - Validates `maxLtvBps <= liquidationThresholdBps <= 10000` on creation and during parameter adjustments via `setRiskParameters`.
+  - Emits `RiskParametersUpdated` whenever risk parameters are updated by admin.
 
 * **Illiquidity Gate**:
   If available free liquidity in the pool is insufficient during a borrow request (`IERC20(asset).balanceOf(address(this)) < amount`):
@@ -268,14 +273,6 @@ $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
 $$\text{Asset}_{\text{available}} = \text{Balance}_{\text{Asset}}$$
 
   The contract throws custom error `InsufficientVaultLiquidity(available, required)` and reverts the transaction.
-
-* **Multi-Asset Pool Factory (`HoloFiLendingPoolFactory`)**:
-  - Centralized factory for deploying and registering permissioned `HoloFiLendingPool` instances.
-  - Pool deployment via `createPool(IERC20 asset, string calldata name, string calldata symbol)` is restricted to `ADMIN_ROLE` in `AccessControlManager`.
-  - Maintains an on-chain lookup mapping `mapping(address => address) public getPool` (`underlyingAsset => poolAddress`) and array `address[] public allPools`.
-  - Prevents duplicate pool creation per underlying asset, reverting with `PoolAlreadyExists(underlyingAsset, existingPool)`.
-
-
 
 ---
 
@@ -287,18 +284,18 @@ $$HF = \frac{\text{Vault FMV} \times \text{liquidationThresholdBps}}{\text{Total
 
 #### A. Dutch Auction Initiation & Parameters (`startAuction`)
 
-1. **State Locking**: Calling `startAuction(vaultId)` verifies $HF < 1.0$, triggers `loanCore.startLiquidation(vaultId)`, and updates the target vault to `Liquidating` status. The store cannot borrow, repay, or withdraw assets while liquidating.
+1. **State Locking**: Calling `startAuction(vaultId)` verifies $HF < 1.0$, triggers `loanCore.startLiquidation(vaultId)`, reads `liquidationPenaltyBps` dynamically from `vault.lendingPool`, and updates the target vault to `Liquidating` status. The store cannot borrow, repay, or withdraw assets while liquidating.
 
 2. **Linear Price Decay Function (`getAuctionPrice`)**:
 * **Start Price ($P_{\text{start}}$)**: $\text{Vault FMV} \times \frac{12000}{10000}$ (120.00% of Vault FMV)
-* **Reserve Price ($P_{\text{reserve}}$)**: Total Debt ($\text{principalDebt} + \text{accumulatedInterest}$)
+* **Reserve Price ($P_{\text{reserve}}$)**: Total Debt ($\text{principalDebt} + \text{accumulatedInterest}$) + Penalty Fee ($\text{debt} \times \text{liquidationPenaltyBps} / 10000$)
 * **Default Auction Duration ($T_{\text{auction}}$)**: 48 hours.
 
 $$\text{CurrentPrice}(t) = P_{\text{start}} - \left( (P_{\text{start}} - P_{\text{reserve}}) \times \frac{t - t_{\text{start}}}{48\text{ hours}} \right)$$
 
 #### B. Auction Settlement & Fund Distribution (`settleAuction`)
 
-When a liquidator calls `settleAuction(vaultId, lendingPool)` paying $\text{CurrentPrice}(t)$ in underlying asset tokens:
+When a liquidator calls `settleAuction(vaultId)` paying $\text{CurrentPrice}(t)$ in underlying asset tokens:
 
 ```text
 Liquidator Buyer
@@ -307,12 +304,14 @@ Liquidator Buyer
     ▼
 HoloFiDutchAuction Contract
     │
-    ├───► 2. Transfer Debt Amount (returnLiquidity) ──► HoloFiLendingPool (Generic ERC-4626)
+    ├───► 2. Transfer Debt Amount (returnLiquidity) ──► Bound HoloFiLendingPool (ERC-4626)
     │                                                   (Full Principal + Interest Clearance)
     │
-    ├───► 3. Transfer Surplus (If any) ───────────────► Original Store (Vault Owner)
+    ├───► 3. Transfer Penalty Amount ────────────────► Bound HoloFiLendingPool (ERC-4626)
     │
-    └───► 4. finalizeLiquidation ─────────────────────► HoloFiVaultLoanCore
+    ├───► 4. Transfer Surplus (If any) ───────────────► Original Store (Vault Owner)
+    │
+    └───► 5. finalizeLiquidation ─────────────────────► HoloFiVaultLoanCore
                                                         │
                                                         └─► Unlock & Transfer NFTs ──► Liquidator Address
                                                              (Emit AuctionSettled & VaultLiquidated)
@@ -323,7 +322,7 @@ HoloFiDutchAuction Contract
 For auctions that expire after the 48-hour duration without receiving public bids, the authorized Protocol Treasury wallet (`treasury`) can execute a backstop buyback:
 
 1. **Role & Expiration Validation**: Enforces `msg.sender == treasury` (`UnauthorizedTreasury`) and `block.timestamp >= auction.startTime + 48 hours` (`AuctionNotExpired`).
-2. **Debt-Only Settlement**: The Treasury pays exactly 100% of the loan debt (`debtAmount`) into `HoloFiLendingPool` via `returnLiquidity(address(this), debtAmount)`. The 10% penalty fee is waived for Treasury to maximize capital efficiency.
+2. **Debt-Only Settlement**: The Treasury pays exactly 100% of the loan debt (`debtAmount`) into bound `vault.lendingPool` via `returnLiquidity(address(this), debtAmount)`. The penalty fee is waived for Treasury to maximize capital efficiency.
 3. **Physical Collateral Assignment**: Calls `loanCore.finalizeLiquidation(vaultId, msg.sender)` to assign the physical card NFT(s) directly to the Protocol Treasury wallet for off-chain liquidation.
 
 ---
@@ -333,26 +332,20 @@ For auctions that expire after the 48-hour duration without receiving public bid
 ### 4.1. Store Borrow Sequence
 
 ```text
-Store               Front-End / CRE           LoanCore Contract       ERC-4626 Vault
+Store               Front-End / CRE           LoanCore Contract       Bound Lending Pool
    │                       │                          │                      │
-   │─── 1. Select NFTs ───►│                          │                      │
-   │    & Request Borrow   │                          │                      │
-   │                       │─── 2. Fetch FMV Data ───►│                      │
-   │                       │    & Generate EIP-712    │                      │
-   │                       │    Signature             │                      │
+   │─── 1. createVault(pool) ────────────────────────►│                      │
    │                       │                          │                      │
-   │◄── 3. Return Payload ─│                          │                      │
-   │    & Signature        │                          │                      │
+   │─── 2. depositCollateral ────────────────────────►│                      │
    │                       │                          │                      │
-   │─── 4. borrow(vaultId, amount, payload, sig) ────►│                      │
-   │                                                  │── 5. Verify EIP-712 ─│
-   │                                                  │   & Check MaxBorrow  │
-   │                                                  │                      │
-   │                                                  │── 6. Transfer USDC ─►│
-   │                                                  │   Request            │
-   │                                                  │                      │
-   │◄───────────────── 7. Transfer USDC ──────────────┼──────────────────────│
-
+   │─── 3. borrow(vaultId, amount) ──────────────────►│                      │
+   │                       │                          │── 4. Verify MaxBorrow│
+   │                       │                          │   (using pool's LTV) │
+   │                       │                          │                      │
+   │                       │                          │── 5. drawLiquidity ─►│
+   │                       │                          │   Request            │
+   │                       │                          │                      │
+   │◄───────────────── 6. Transfer Asset ─────────────┼──────────────────────│
 ```
 
 ---
@@ -360,23 +353,19 @@ Store               Front-End / CRE           LoanCore Contract       ERC-4626 V
 ### 4.2. Dutch Auction Liquidation Sequence
 
 ```text
-Keeper / Liquidator        DutchAuction Contract       LoanCore Contract       Blink Logistics
+Keeper / Liquidator        DutchAuction Contract       LoanCore Contract       Bound Lending Pool
         │                            │                         │                      │
-        │── 1. triggerLiquidation ──►│                         │                      │
-        │   (with Signed Payload)    │── 2. Check HF < 1.0 ───►│                      │
+        │── 1. startAuction(vaultId) ┼────────────────────────►│                      │
+        │                            │── 2. Check HF < 1.0 ───►│                      │
         │                            │   Lock Vault Status     │                      │
-        │                            │◄── 3. Transfer NFTs ────│                      │
         │                            │                         │                      │
-        │── 4. bidAuction(vaultId) ─►│                         │                      │
-        │   (Pay CurrentPrice USDC)  │── 5. Repay Debt ───────►│──► Repay ERC-4626    │
-        │                            │── 6. Pay Surplus ──────►│──► Transfer Owner    │
+        │── 3. settleAuction(vaultId)┼────────────────────────►│                      │
+        │   (Pay CurrentPrice Asset) │── 4. Repay Debt ───────►│──► Repay Pool ───────│
+        │                            │── 5. Pay Surplus ──────►│──► Transfer Store    │
         │                            │                         │                      │
-        │◄── 7. Transfer NFTs ───────│                         │                      │
+        │◄── 6. Transfer NFTs ───────│                         │                      │
         │                            │                                                │
-        │                            └────── 8. Emit Event AuctionSettled ───────────►│
-        │                                                                             │
-        │◄────────────────── 9. Physical Card Delivery (Off-Chain) ───────────────────│
-
+        │                            └────── 7. Emit Event AuctionSettled ───────────►│
 ```
 
 ---

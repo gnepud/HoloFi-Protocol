@@ -21,7 +21,7 @@ export const PRICE_FEED_ABI = [
 
 export const LOAN_CORE_ABI = [
   "function nftVaultId(uint256 tokenId) external view returns (uint256)",
-  "function getVault(uint256 vaultId) external view returns (tuple(uint256 vaultId, address owner, uint256[] tokenIds, uint256 principalDebt, uint256 accumulatedInterest, uint256 lastInterestUpdateTime, uint8 status))",
+  "function getVault(uint256 vaultId) external view returns (tuple(uint256 vaultId, address owner, address lendingPool, uint256[] tokenIds, uint256 principalDebt, uint256 accumulatedInterest, uint256 lastInterestUpdateTime, uint8 status))",
 ];
 
 export interface CardMetadata {
@@ -685,7 +685,7 @@ export async function fetchCardDetails(
       if (vaultId > 0n) {
         const vaultStruct = await loanCore.getVault(vaultId);
         const vaultOwner = (vaultStruct.owner ?? vaultStruct[1]) as string;
-        const statusNum = Number(vaultStruct.status ?? vaultStruct[6]);
+        const statusNum = Number(vaultStruct.status ?? vaultStruct[7]);
         let vaultStatus: "Active" | "Liquidating" | "Closed" | "Unknown";
         if (statusNum === 0) {
           vaultStatus = "Active";
@@ -698,10 +698,10 @@ export async function fetchCardDetails(
         }
 
         const principalDebt = BigInt(
-          vaultStruct.principalDebt ?? vaultStruct[3] ?? 0n
+          vaultStruct.principalDebt ?? vaultStruct[4] ?? 0n
         );
         const accumulatedInterest = BigInt(
-          vaultStruct.accumulatedInterest ?? vaultStruct[4] ?? 0n
+          vaultStruct.accumulatedInterest ?? vaultStruct[5] ?? 0n
         );
 
         vaultLockInfo = {
