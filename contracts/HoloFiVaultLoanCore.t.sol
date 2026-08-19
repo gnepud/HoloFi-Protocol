@@ -8,6 +8,8 @@ import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
 import { HoloFiCardPriceFeed } from "./HoloFiCardPriceFeed.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
+import { GradeEligibilityPolicy } from "./policies/GradeEligibilityPolicy.sol";
+import { ICardEligibilityPolicy } from "./interfaces/ICardEligibilityPolicy.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -693,5 +695,90 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
             )
         );
         loanCore.repayAndWithdraw(vaultId, 0, withdrawTokens);
+    }
+
+    function test_DepositCollateral_WithEligibilityPolicy_Success() public {
+        GradeEligibilityPolicy policy = new GradeEligibilityPolicy(address(acm), "PSA", 10, 0);
+
+        vm.prank(admin);
+        pool.setEligibilityPolicy(address(policy));
+
+        ICardEligibilityPolicy.CardAttributes memory psa10 = ICardEligibilityPolicy.CardAttributes({
+            game: "Pokemon",
+            language: "EN",
+            setName: "Base",
+            cardName: "Pikachu",
+            cardNumber: "25/102",
+            printing: "1st",
+            grader: "PSA",
+            grade: "10"
+        });
+
+        vm.prank(minter);
+        (bytes32 cardTypeId, ) = policy.registerCardType(psa10);
+
+        uint256 eligibleTokenId;
+        vm.prank(minter);
+        eligibleTokenId = vaultCard.mintCard(store, cardTypeId, keccak256("raw_data_eligible"), "ipfs://eligible");
+
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault(address(pool));
+
+        vm.prank(store);
+        vaultCard.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = eligibleTokenId;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        assertEq(vaultCard.ownerOf(eligibleTokenId), address(loanCore));
+        assertEq(loanCore.nftVaultId(eligibleTokenId), vaultId);
+    }
+
+    function test_RevertIf_DepositCollateral_IneligibleCollateral() public {
+        GradeEligibilityPolicy policy = new GradeEligibilityPolicy(address(acm), "PSA", 10, 0);
+
+        vm.prank(admin);
+        pool.setEligibilityPolicy(address(policy));
+
+        ICardEligibilityPolicy.CardAttributes memory psa9 = ICardEligibilityPolicy.CardAttributes({
+            game: "Pokemon",
+            language: "EN",
+            setName: "Base",
+            cardName: "Charizard",
+            cardNumber: "4/102",
+            printing: "1st",
+            grader: "PSA",
+            grade: "9"
+        });
+
+        vm.prank(minter);
+        (bytes32 ineligibleCardTypeId, ) = policy.registerCardType(psa9);
+
+        uint256 ineligibleTokenId;
+        vm.prank(minter);
+        ineligibleTokenId = vaultCard.mintCard(store, ineligibleCardTypeId, keccak256("raw_data_ineligible"), "ipfs://ineligible");
+
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault(address(pool));
+
+        vm.prank(store);
+        vaultCard.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = ineligibleTokenId;
+
+        vm.prank(store);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HoloFiVaultLoanCore.IneligibleCollateral.selector,
+                ineligibleTokenId,
+                ineligibleCardTypeId,
+                address(pool)
+            )
+        );
+        loanCore.depositCollateral(vaultId, tokenIds);
     }
 }

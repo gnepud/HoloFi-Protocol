@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import { ERC4626, ERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
+import { ICardEligibilityPolicy } from "./interfaces/ICardEligibilityPolicy.sol";
 
 interface IHoloFiVaultLoanCore {
     function dutchAuction() external view returns (address);
@@ -17,6 +18,7 @@ contract HoloFiLendingPool is ERC4626 {
 
     AccessControlManager public immutable acm;
     address public loanCore;
+    address public eligibilityPolicy;
 
     uint256 public maxLtvBps;                // Max LTV (e.g. 5000 = 50.00%)
     uint256 public liquidationThresholdBps; // Liquidation Threshold (e.g. 7000 = 70.00%)
@@ -24,6 +26,7 @@ contract HoloFiLendingPool is ERC4626 {
     uint256 public borrowRateBpsPerYear;      // Borrow Rate APY (e.g. 500 = 5.00%)
 
     event LoanCoreUpdated(address indexed newLoanCore);
+    event EligibilityPolicyUpdated(address indexed newPolicy);
     event LiquidityDrawn(address indexed borrower, uint256 amount);
     event LiquidityReturned(address indexed payer, uint256 amount);
     event RiskParametersUpdated(
@@ -97,6 +100,21 @@ contract HoloFiLendingPool is ERC4626 {
 
         loanCore = _loanCore;
         emit LoanCoreUpdated(_loanCore);
+    }
+
+    function setEligibilityPolicy(address _policy) external {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedAdmin(msg.sender);
+        }
+        eligibilityPolicy = _policy;
+        emit EligibilityPolicyUpdated(_policy);
+    }
+
+    function isCollateralAllowed(bytes32 cardTypeId) public view returns (bool) {
+        if (eligibilityPolicy == address(0)) {
+            return true;
+        }
+        return ICardEligibilityPolicy(eligibilityPolicy).isCardTypeEligible(cardTypeId);
     }
 
     function drawLiquidity(address recipient, uint256 amount) external {

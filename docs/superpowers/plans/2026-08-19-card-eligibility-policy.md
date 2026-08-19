@@ -81,26 +81,26 @@ git commit -m "feat(HF-38): add ICardEligibilityPolicy and GradeEligibilityPolic
   - `HoloFiLendingPool`: `eligibilityPolicy`, `setEligibilityPolicy(address)`, `isCollateralAllowed(bytes32)`.
   - `HoloFiVaultLoanCore`: `IneligibleCollateral(uint256, bytes32, address)` error, enforced in `depositCollateral`.
 
-- [ ] **Step 1: Update `contracts/HoloFiLendingPool.sol`**
+- [x] **Step 1: Update `contracts/HoloFiLendingPool.sol`**
 
 Add `address public eligibilityPolicy;`, `event EligibilityPolicyUpdated(address indexed newPolicy);`, `setEligibilityPolicy(address _policy)` with `onlyAdmin`, and `isCollateralAllowed(bytes32 cardTypeId)` (returns `true` if `eligibilityPolicy == address(0)`, else calls `policy.isCardTypeEligible(cardTypeId)`).
 
-- [ ] **Step 2: Update `contracts/HoloFiVaultLoanCore.sol`**
+- [x] **Step 2: Update `contracts/HoloFiVaultLoanCore.sol`**
 
 Add `error IneligibleCollateral(uint256 tokenId, bytes32 cardTypeId, address lendingPool);`. In `depositCollateral(vaultId, tokenIds)`, query `HoloFiLendingPool(vault.lendingPool).isCollateralAllowed(card.cardTypeId)` and revert with `IneligibleCollateral` if disallowed.
 
-- [ ] **Step 3: Update `contracts/HoloFiLendingPool.t.sol` and `contracts/HoloFiVaultLoanCore.t.sol`**
+- [x] **Step 3: Update `contracts/HoloFiLendingPool.t.sol` and `contracts/HoloFiVaultLoanCore.t.sol`**
 
 Add tests for:
 - `HoloFiLendingPool.t.sol`: `setEligibilityPolicy` success by admin, unauthorized caller revert, `isCollateralAllowed` with zero address and active policy.
 - `HoloFiVaultLoanCore.t.sol`: `depositCollateral` succeeds with eligible card and reverts with `IneligibleCollateral` with ineligible card.
 
-- [ ] **Step 4: Run Solidity unit tests to verify**
+- [x] **Step 4: Run Solidity unit tests to verify**
 
 Run: `npx hardhat test solidity`
 Expected: PASS cleanly.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add contracts/HoloFiLendingPool.sol contracts/HoloFiVaultLoanCore.sol contracts/HoloFiLendingPool.t.sol contracts/HoloFiVaultLoanCore.t.sol

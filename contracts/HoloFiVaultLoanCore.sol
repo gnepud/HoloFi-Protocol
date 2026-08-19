@@ -91,6 +91,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error UnauthorizedAuction(address caller);
     error VaultNotEligibleForLiquidation(uint256 vaultId, uint256 healthFactor);
     error VaultNotLiquidating(uint256 vaultId);
+    error IneligibleCollateral(uint256 tokenId, bytes32 cardTypeId, address lendingPool);
 
     constructor(address _acm, address _vaultCard, address _poolFactory, address _priceFeed) {
         if (_acm == address(0)) {
@@ -208,11 +209,18 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
             revert EmptyTokenIdsList();
         }
 
+        HoloFiLendingPool pool = HoloFiLendingPool(vault.lendingPool);
+
         for (uint256 i = 0; i < tokenIds.length; i++) {
             uint256 tokenId = tokenIds[i];
             uint256 existingVault = nftVaultId[tokenId];
             if (existingVault != 0) {
                 revert TokenAlreadyInVault(tokenId, existingVault);
+            }
+
+            HoloFiVaultCard.CardMetadata memory card = vaultCard.getCard(tokenId);
+            if (!pool.isCollateralAllowed(card.cardTypeId)) {
+                revert IneligibleCollateral(tokenId, card.cardTypeId, vault.lendingPool);
             }
 
             vaultCard.safeTransferFrom(msg.sender, address(this), tokenId);

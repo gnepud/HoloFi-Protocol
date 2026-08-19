@@ -5,6 +5,8 @@ import { Test } from "forge-std/Test.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
+import { GradeEligibilityPolicy } from "./policies/GradeEligibilityPolicy.sol";
+import { ICardEligibilityPolicy } from "./interfaces/ICardEligibilityPolicy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract HoloFiLendingPoolTest is Test {
@@ -229,5 +231,69 @@ contract HoloFiLendingPoolTest is Test {
         vm.prank(unauthorized);
         vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ShareTokenNonTransferable.selector));
         poolEurc.transferFrom(lp, borrower, 100 * 1e6);
+    }
+
+    function test_SetEligibilityPolicy_Success() public {
+        GradeEligibilityPolicy policy = new GradeEligibilityPolicy(address(acm), "PSA", 10, 0);
+
+        vm.prank(admin);
+        poolEurc.setEligibilityPolicy(address(policy));
+
+        assertEq(poolEurc.eligibilityPolicy(), address(policy));
+    }
+
+    function test_RevertIf_SetEligibilityPolicy_Unauthorized() public {
+        GradeEligibilityPolicy policy = new GradeEligibilityPolicy(address(acm), "PSA", 10, 0);
+
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.UnauthorizedAdmin.selector, unauthorized));
+        poolEurc.setEligibilityPolicy(address(policy));
+    }
+
+    function test_IsCollateralAllowed_ZeroAddressPolicy() public view {
+        assertEq(poolEurc.eligibilityPolicy(), address(0));
+        bytes32 cardTypeId = keccak256("RandomCard");
+        assertTrue(poolEurc.isCollateralAllowed(cardTypeId));
+    }
+
+    function test_IsCollateralAllowed_WithPolicy() public {
+        GradeEligibilityPolicy policy = new GradeEligibilityPolicy(address(acm), "PSA", 10, 0);
+
+        vm.prank(admin);
+        poolEurc.setEligibilityPolicy(address(policy));
+
+        ICardEligibilityPolicy.CardAttributes memory psa10 = ICardEligibilityPolicy.CardAttributes({
+            game: "Pokemon",
+            language: "EN",
+            setName: "Base",
+            cardName: "Charizard",
+            cardNumber: "4/102",
+            printing: "1st",
+            grader: "PSA",
+            grade: "10"
+        });
+
+        ICardEligibilityPolicy.CardAttributes memory psa9 = ICardEligibilityPolicy.CardAttributes({
+            game: "Pokemon",
+            language: "EN",
+            setName: "Base",
+            cardName: "Charizard",
+            cardNumber: "4/102",
+            printing: "1st",
+            grader: "PSA",
+            grade: "9"
+        });
+
+        bytes32 id10 = policy.computeCardTypeId(psa10);
+        bytes32 id9 = policy.computeCardTypeId(psa9);
+
+        vm.startPrank(admin);
+        acm.grantRole(acm.MINTER_ROLE(), admin);
+        policy.registerCardType(psa10);
+        policy.registerCardType(psa9);
+        vm.stopPrank();
+
+        assertTrue(poolEurc.isCollateralAllowed(id10));
+        assertFalse(poolEurc.isCollateralAllowed(id9));
     }
 }
