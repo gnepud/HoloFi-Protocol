@@ -18,6 +18,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     struct CollateralVault {
         uint256 vaultId;
         address owner;               // Store wallet address
+        address lendingPool;         // Pool bound during creation
         uint256[] tokenIds;          // List of deposited NFT token IDs
         uint256 principalDebt;       // Borrowed capital
         uint256 accumulatedInterest; // Unpaid accrued interest
@@ -39,12 +40,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     uint256 public constant SECONDS_PER_YEAR = 365 days;
     uint256 public constant HEALTH_FACTOR_PRECISION = 1e18;
 
-    uint256 public maxLtvBps = 5000;                // Max LTV: 50.00%
-    uint256 public liquidationThresholdBps = 7000; // Liquidation Threshold: 70.00%
-    uint256 public liquidationPenaltyBps = 1000;   // Liquidation Penalty: 10.00%
-    uint256 public borrowRateBpsPerYear = 500;      // Borrow Rate: 5.00% APY
-
-    event VaultCreated(uint256 indexed vaultId, address indexed owner);
+    event VaultCreated(uint256 indexed vaultId, address indexed owner, address indexed lendingPool);
     event CollateralDeposited(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
     event CollateralWithdrawn(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
     event BorrowExecuted(
@@ -53,12 +49,6 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         address indexed lendingPool,
         uint256 amount,
         uint256 newPrincipalDebt
-    );
-    event RiskParametersUpdated(
-        uint256 maxLtvBps,
-        uint256 liquidationThresholdBps,
-        uint256 liquidationPenaltyBps,
-        uint256 borrowRateBpsPerYear
     );
     event InterestAccrued(
         uint256 indexed vaultId,
@@ -92,7 +82,6 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     error EmptyTokenIdsList();
     error TokenAlreadyInVault(uint256 tokenId, uint256 existingVaultId);
     error TokenNotInVault(uint256 tokenId, uint256 vaultId);
-    error InvalidRiskParameters();
     error UnauthorizedAdmin(address caller);
     error ZeroBorrowAmount();
     error ExceedsMaxBorrowCapacity(uint256 vaultId, uint256 requestedTotalDebt, uint256 maxBorrowCapacity);
@@ -130,34 +119,14 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         emit DutchAuctionUpdated(_dutchAuction);
     }
 
-    function setRiskParameters(
-        uint256 _maxLtvBps,
-        uint256 _liquidationThresholdBps,
-        uint256 _liquidationPenaltyBps,
-        uint256 _borrowRateBpsPerYear
-    ) external {
-        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
-            revert UnauthorizedAdmin(msg.sender);
-        }
-        if (_maxLtvBps > _liquidationThresholdBps || _liquidationThresholdBps > BPS_DENOMINATOR) {
-            revert InvalidRiskParameters();
-        }
-
-        maxLtvBps = _maxLtvBps;
-        liquidationThresholdBps = _liquidationThresholdBps;
-        liquidationPenaltyBps = _liquidationPenaltyBps;
-        borrowRateBpsPerYear = _borrowRateBpsPerYear;
-
-        emit RiskParametersUpdated(_maxLtvBps, _liquidationThresholdBps, _liquidationPenaltyBps, _borrowRateBpsPerYear);
-    }
-
     function accrueInterest(uint256 vaultId) public {
         CollateralVault storage vault = vaults[vaultId];
         uint256 dt = block.timestamp - vault.lastInterestUpdateTime;
         if (dt == 0) return;
 
         if (vault.principalDebt > 0) {
-            uint256 interestNew = (vault.principalDebt * borrowRateBpsPerYear * dt) /
+            uint256 borrowRate = HoloFiLendingPool(vault.lendingPool).borrowRateBpsPerYear();
+            uint256 interestNew = (vault.principalDebt * borrowRate * dt) /
                 (BPS_DENOMINATOR * SECONDS_PER_YEAR);
             vault.accumulatedInterest += interestNew;
             emit InterestAccrued(vaultId, interestNew, vault.accumulatedInterest, block.timestamp);
@@ -170,7 +139,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         uint256 dt = block.timestamp - vault.lastInterestUpdateTime;
         if (dt == 0 || vault.principalDebt == 0) return 0;
 
-        return (vault.principalDebt * borrowRateBpsPerYear * dt) / (BPS_DENOMINATOR * SECONDS_PER_YEAR);
+        uint256 borrowRate = HoloFiLendingPool(vault.lendingPool).borrowRateBpsPerYear();
+        return (vault.principalDebt * borrowRate * dt) / (BPS_DENOMINATOR * SECONDS_PER_YEAR);
     }
 
     function getTotalDebt(uint256 vaultId) public view returns (uint256) {
@@ -178,18 +148,19 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         return vault.principalDebt + vault.accumulatedInterest + getPendingInterest(vaultId);
     }
 
-    function calculateHealthFactor(uint256 vaultFmv, uint256 totalDebt) public view returns (uint256) {
+    function getHealthFactor(uint256 vaultId, uint256 vaultFmv) public view returns (uint256) {
+        uint256 totalDebt = getTotalDebt(vaultId);
         if (totalDebt == 0) {
             return type(uint256).max;
         }
-        return (vaultFmv * liquidationThresholdBps * HEALTH_FACTOR_PRECISION) / (totalDebt * BPS_DENOMINATOR);
+        address pool = vaults[vaultId].lendingPool;
+        uint256 ltBps = HoloFiLendingPool(pool).liquidationThresholdBps();
+        return (vaultFmv * ltBps * HEALTH_FACTOR_PRECISION) / (totalDebt * BPS_DENOMINATOR);
     }
 
-    function getHealthFactor(uint256 vaultId, uint256 vaultFmv) public view returns (uint256) {
-        return calculateHealthFactor(vaultFmv, getTotalDebt(vaultId));
-    }
-
-    function getMaxBorrowCapacity(uint256 vaultFmv) public view returns (uint256) {
+    function getMaxBorrowCapacity(uint256 vaultId, uint256 vaultFmv) public view returns (uint256) {
+        address pool = vaults[vaultId].lendingPool;
+        uint256 maxLtvBps = HoloFiLendingPool(pool).maxLtvBps();
         return (vaultFmv * maxLtvBps) / BPS_DENOMINATOR;
     }
 
@@ -202,15 +173,19 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         return IERC721Receiver.onERC721Received.selector;
     }
 
-    function createVault() external returns (uint256 vaultId) {
+    function createVault(address lendingPool) external returns (uint256 vaultId) {
         if (!acm.isKybApproved(msg.sender)) {
             revert KybRequired(msg.sender);
+        }
+        if (!poolFactory.isValidPool(lendingPool)) {
+            revert UnregisteredLendingPool(lendingPool);
         }
 
         vaultId = nextVaultId++;
         vaults[vaultId] = CollateralVault({
             vaultId: vaultId,
             owner: msg.sender,
+            lendingPool: lendingPool,
             tokenIds: new uint256[](0),
             principalDebt: 0,
             accumulatedInterest: 0,
@@ -218,7 +193,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
             status: VaultStatus.Active
         });
 
-        emit VaultCreated(vaultId, msg.sender);
+        emit VaultCreated(vaultId, msg.sender, lendingPool);
     }
 
     function depositCollateral(uint256 vaultId, uint256[] calldata tokenIds) external {
@@ -281,7 +256,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
             uint256 totalFmv = getVaultFMV(vaultId);
             uint256 remainingFmv = totalFmv > withdrawnFmv ? totalFmv - withdrawnFmv : 0;
-            uint256 remainingMaxBorrow = getMaxBorrowCapacity(remainingFmv);
+            uint256 remainingMaxBorrow = getMaxBorrowCapacity(vaultId, remainingFmv);
 
             if (currentTotalDebt > remainingMaxBorrow) {
                 revert InsufficientCollateralRatio(vaultId, currentTotalDebt, remainingMaxBorrow);
@@ -306,7 +281,6 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
     function repayAndWithdraw(
         uint256 vaultId,
         uint256 repayAmount,
-        address lendingPool,
         uint256[] calldata withdrawTokenIds
     ) external {
         if (withdrawTokenIds.length > 0) {
@@ -316,7 +290,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         }
 
         if (repayAmount > 0) {
-            repay(vaultId, repayAmount, lendingPool);
+            repay(vaultId, repayAmount);
         }
 
         if (withdrawTokenIds.length > 0) {
@@ -334,10 +308,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         }
     }
 
-    function borrow(uint256 vaultId, uint256 amount, address lendingPool) external {
-        if (!poolFactory.isValidPool(lendingPool)) {
-            revert UnregisteredLendingPool(lendingPool);
-        }
+    function borrow(uint256 vaultId, uint256 amount) external {
         CollateralVault storage vault = vaults[vaultId];
         if (msg.sender != vault.owner) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
@@ -352,7 +323,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         accrueInterest(vaultId);
 
         uint256 vaultFmv = getVaultFMV(vaultId);
-        uint256 maxBorrow = getMaxBorrowCapacity(vaultFmv);
+        uint256 maxBorrow = getMaxBorrowCapacity(vaultId, vaultFmv);
         uint256 newTotalDebt = getTotalDebt(vaultId) + amount;
 
         if (newTotalDebt > maxBorrow) {
@@ -361,15 +332,12 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
 
         vault.principalDebt += amount;
 
-        HoloFiLendingPool(lendingPool).drawLiquidity(vault.owner, amount);
+        HoloFiLendingPool(vault.lendingPool).drawLiquidity(vault.owner, amount);
 
-        emit BorrowExecuted(vaultId, vault.owner, lendingPool, amount, vault.principalDebt);
+        emit BorrowExecuted(vaultId, vault.owner, vault.lendingPool, amount, vault.principalDebt);
     }
 
-    function repay(uint256 vaultId, uint256 amount, address lendingPool) public {
-        if (!poolFactory.isValidPool(lendingPool)) {
-            revert UnregisteredLendingPool(lendingPool);
-        }
+    function repay(uint256 vaultId, uint256 amount) public {
         CollateralVault storage vault = vaults[vaultId];
         if (vault.status != VaultStatus.Active) {
             revert VaultNotActive(vaultId);
@@ -399,12 +367,12 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
             vault.principalDebt -= principalPaid;
         }
 
-        HoloFiLendingPool(lendingPool).returnLiquidity(msg.sender, actualRepay);
+        HoloFiLendingPool(vault.lendingPool).returnLiquidity(msg.sender, actualRepay);
 
         emit RepaymentExecuted(
             vaultId,
             msg.sender,
-            lendingPool,
+            vault.lendingPool,
             actualRepay,
             interestPaid,
             principalPaid,
@@ -425,8 +393,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         accrueInterest(vaultId);
 
         uint256 fmv = getVaultFMV(vaultId);
-        uint256 totalDebt = getTotalDebt(vaultId);
-        uint256 hf = calculateHealthFactor(fmv, totalDebt);
+        uint256 hf = getHealthFactor(vaultId, fmv);
 
         if (hf >= HEALTH_FACTOR_PRECISION) {
             revert VaultNotEligibleForLiquidation(vaultId, hf);

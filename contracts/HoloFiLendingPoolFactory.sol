@@ -32,7 +32,11 @@ contract HoloFiLendingPoolFactory {
     function createPool(
         IERC20 asset,
         string calldata name,
-        string calldata symbol
+        string calldata symbol,
+        uint256 maxLtvBps,
+        uint256 liquidationThresholdBps,
+        uint256 liquidationPenaltyBps,
+        uint256 borrowRateBpsPerYear
     ) external returns (address pool) {
         if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedOperator(msg.sender);
@@ -45,7 +49,16 @@ contract HoloFiLendingPoolFactory {
             revert PoolAlreadyExists(address(asset), existingPool);
         }
 
-        HoloFiLendingPool poolContract = new HoloFiLendingPool(asset, name, symbol, address(acm));
+        HoloFiLendingPool poolContract = new HoloFiLendingPool(
+            asset,
+            name,
+            symbol,
+            address(acm),
+            maxLtvBps,
+            liquidationThresholdBps,
+            liquidationPenaltyBps,
+            borrowRateBpsPerYear
+        );
         pool = address(poolContract);
 
         getPool[address(asset)] = pool;

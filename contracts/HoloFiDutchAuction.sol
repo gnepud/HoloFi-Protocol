@@ -93,9 +93,10 @@ contract HoloFiDutchAuction is ReentrancyGuard {
 
         loanCore.startLiquidation(vaultId);
 
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
         uint256 startFmv = loanCore.getVaultFMV(vaultId);
         uint256 totalDebt = loanCore.getTotalDebt(vaultId);
-        uint256 penaltyBps = loanCore.liquidationPenaltyBps();
+        uint256 penaltyBps = HoloFiLendingPool(vault.lendingPool).liquidationPenaltyBps();
 
         uint256 penaltyAmount = (totalDebt * penaltyBps) / BPS_DENOMINATOR;
         uint256 reservePrice = totalDebt + penaltyAmount;
@@ -104,8 +105,6 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         if (startPrice < reservePrice) {
             startPrice = reservePrice;
         }
-
-        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
 
         auctions[vaultId] = Auction({
             vaultId: vaultId,
@@ -138,13 +137,10 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         return auction.startPrice - priceDrop;
     }
 
-    function settleAuction(uint256 vaultId, address lendingPool) external nonReentrant {
+    function settleAuction(uint256 vaultId) external nonReentrant {
         Auction storage auction = auctions[vaultId];
         if (auction.startTime == 0 || auction.isSettled) {
             revert AuctionNotActive(vaultId);
-        }
-        if (!poolFactory.isValidPool(lendingPool)) {
-            revert UnregisteredLendingPool(lendingPool);
         }
 
         uint256 currentPrice = getAuctionPrice(vaultId);
@@ -160,6 +156,8 @@ contract HoloFiDutchAuction is ReentrancyGuard {
 
         auction.isSettled = true;
 
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
+        address lendingPool = vault.lendingPool;
         IERC20 asset = IERC20(HoloFiLendingPool(lendingPool).asset());
 
         // Step 1: Pull full currentPrice from liquidator to DutchAuction contract
@@ -196,7 +194,7 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         emit TreasuryUpdated(_treasury);
     }
 
-    function treasuryBuyback(uint256 vaultId, address lendingPool) external nonReentrant {
+    function treasuryBuyback(uint256 vaultId) external nonReentrant {
         if (msg.sender != treasury) {
             revert UnauthorizedTreasury(msg.sender);
         }
@@ -204,9 +202,6 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         Auction storage auction = auctions[vaultId];
         if (auction.startTime == 0 || auction.isSettled) {
             revert AuctionNotActive(vaultId);
-        }
-        if (!poolFactory.isValidPool(lendingPool)) {
-            revert UnregisteredLendingPool(lendingPool);
         }
 
         uint256 expiryTime = auction.startTime + auction.duration;
@@ -218,6 +213,8 @@ contract HoloFiDutchAuction is ReentrancyGuard {
 
         auction.isSettled = true;
 
+        HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
+        address lendingPool = vault.lendingPool;
         IERC20 asset = IERC20(HoloFiLendingPool(lendingPool).asset());
 
         // Step 1: Pull exact debtPaid from treasury to DutchAuction

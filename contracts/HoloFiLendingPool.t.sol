@@ -25,8 +25,8 @@ contract HoloFiLendingPoolTest is Test {
         eurc = new MockERC20("Euro Coin", "EURC", 6);
         weth = new MockERC20("Wrapped Ether", "WETH", 18);
 
-        poolEurc = new HoloFiLendingPool(IERC20(address(eurc)), "HoloFi Pool EURC", "pEURC", address(acm));
-        poolWeth = new HoloFiLendingPool(IERC20(address(weth)), "HoloFi Pool WETH", "pWETH", address(acm));
+        poolEurc = new HoloFiLendingPool(IERC20(address(eurc)), "HoloFi Pool EURC", "pEURC", address(acm), 5000, 7000, 1000, 500);
+        poolWeth = new HoloFiLendingPool(IERC20(address(weth)), "HoloFi Pool WETH", "pWETH", address(acm), 6000, 8000, 1200, 600);
 
         eurc.mint(lp, 10_000 * 1e6);
         weth.mint(lp, 10 * 1e18);
@@ -48,20 +48,64 @@ contract HoloFiLendingPoolTest is Test {
         assertEq(poolEurc.name(), "HoloFi Pool EURC");
         assertEq(poolEurc.symbol(), "pEURC");
         assertEq(poolEurc.loanCore(), loanCore);
+        assertEq(poolEurc.maxLtvBps(), 5000);
+        assertEq(poolEurc.liquidationThresholdBps(), 7000);
+        assertEq(poolEurc.liquidationPenaltyBps(), 1000);
+        assertEq(poolEurc.borrowRateBpsPerYear(), 500);
 
         assertEq(address(poolWeth.asset()), address(weth));
         assertEq(poolWeth.name(), "HoloFi Pool WETH");
         assertEq(poolWeth.symbol(), "pWETH");
+        assertEq(poolWeth.maxLtvBps(), 6000);
+        assertEq(poolWeth.liquidationThresholdBps(), 8000);
+        assertEq(poolWeth.liquidationPenaltyBps(), 1200);
+        assertEq(poolWeth.borrowRateBpsPerYear(), 600);
     }
 
     function test_RevertIf_ZeroAddressAsset() public {
         vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ZeroAddressAsset.selector));
-        new HoloFiLendingPool(IERC20(address(0)), "Pool", "pTOKEN", address(acm));
+        new HoloFiLendingPool(IERC20(address(0)), "Pool", "pTOKEN", address(acm), 5000, 7000, 1000, 500);
     }
 
     function test_RevertIf_ZeroAddressACM() public {
         vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ZeroAddressACM.selector));
-        new HoloFiLendingPool(IERC20(address(eurc)), "Pool", "pTOKEN", address(0));
+        new HoloFiLendingPool(IERC20(address(eurc)), "Pool", "pTOKEN", address(0), 5000, 7000, 1000, 500);
+    }
+
+    function test_RevertIf_Constructor_InvalidRiskParameters() public {
+        // LTV > Liquidation threshold
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.InvalidRiskParameters.selector));
+        new HoloFiLendingPool(IERC20(address(eurc)), "Pool", "pTOKEN", address(acm), 7500, 7000, 1000, 500);
+
+        // Liquidation threshold > BPS_DENOMINATOR (10000)
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.InvalidRiskParameters.selector));
+        new HoloFiLendingPool(IERC20(address(eurc)), "Pool", "pTOKEN", address(acm), 5000, 10001, 1000, 500);
+    }
+
+    function test_SetRiskParameters_Success() public {
+        vm.prank(admin);
+        poolEurc.setRiskParameters(4000, 6000, 800, 450);
+
+        assertEq(poolEurc.maxLtvBps(), 4000);
+        assertEq(poolEurc.liquidationThresholdBps(), 6000);
+        assertEq(poolEurc.liquidationPenaltyBps(), 800);
+        assertEq(poolEurc.borrowRateBpsPerYear(), 450);
+    }
+
+    function test_RevertIf_SetRiskParameters_Unauthorized() public {
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.UnauthorizedAdmin.selector, unauthorized));
+        poolEurc.setRiskParameters(4000, 6000, 800, 450);
+    }
+
+    function test_RevertIf_SetRiskParameters_InvalidRiskParameters() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.InvalidRiskParameters.selector));
+        poolEurc.setRiskParameters(7000, 6000, 800, 450);
+
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.InvalidRiskParameters.selector));
+        poolEurc.setRiskParameters(5000, 10500, 800, 450);
     }
 
     function test_DepositAndRedeem_6Decimals() public {
