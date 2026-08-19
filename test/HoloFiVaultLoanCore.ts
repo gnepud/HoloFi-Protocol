@@ -440,7 +440,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     const deluxePolicy = await ethers.deployContract("GradeEligibilityPolicy", [
       await acm.getAddress(),
       "PSA",
-      0n,
+      9n,
       9n,
     ]);
     await deluxePool.connect(admin).setEligibilityPolicy(await deluxePolicy.getAddress());

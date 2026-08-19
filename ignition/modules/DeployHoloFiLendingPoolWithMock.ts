@@ -47,10 +47,10 @@ const DeployHoloFiLendingPoolWithMock = buildModule("DeployHoloFiLendingPoolWith
   });
   m.call(premiumLendingPool, "setLoanCore", [loanCore], { id: "setLoanCorePremiumPool" });
 
-  // Policy: PSA >= 10 for Premium Pool
+  // Policy: Exact PSA 10 for Premium Pool
   const premiumRequiredGrader = m.getParameter("premiumRequiredGrader", "PSA");
   const premiumMinGrade = m.getParameter("premiumMinGrade", 10n);
-  const premiumMaxGrade = m.getParameter("premiumMaxGrade", 0n);
+  const premiumMaxGrade = m.getParameter("premiumMaxGrade", 10n);
   const premiumPoolPolicy = m.contract("GradeEligibilityPolicy", [
     acm,
     premiumRequiredGrader,
@@ -79,9 +79,9 @@ const DeployHoloFiLendingPoolWithMock = buildModule("DeployHoloFiLendingPoolWith
   });
   m.call(deluxeLendingPool, "setLoanCore", [loanCore], { id: "setLoanCoreDeluxePool" });
 
-  // Policy: PSA <= 9 for Deluxe Pool
+  // Policy: Exact PSA 9 for Deluxe Pool
   const deluxeRequiredGrader = m.getParameter("deluxeRequiredGrader", "PSA");
-  const deluxeMinGrade = m.getParameter("deluxeMinGrade", 0n);
+  const deluxeMinGrade = m.getParameter("deluxeMinGrade", 9n);
   const deluxeMaxGrade = m.getParameter("deluxeMaxGrade", 9n);
   const deluxePoolPolicy = m.contract("GradeEligibilityPolicy", [
     acm,

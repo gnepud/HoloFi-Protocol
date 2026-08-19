@@ -170,6 +170,44 @@ contract GradeEligibilityPolicyTest is Test {
         assertTrue(anyGraderPolicy.isCardTypeEligible(cardTypeId));
     }
 
+    function test_RegisterCardType_ExactGradePolicy() public {
+        // Exact PSA 9 policy (minGrade = 9, maxGrade = 9)
+        GradeEligibilityPolicy exact9Policy = new GradeEligibilityPolicy(address(acm), "PSA", 9, 9);
+
+        // Exact PSA 10 policy (minGrade = 10, maxGrade = 10)
+        GradeEligibilityPolicy exact10Policy = new GradeEligibilityPolicy(address(acm), "PSA", 10, 10);
+
+        ICardEligibilityPolicy.CardAttributes memory psa8Card = ICardEligibilityPolicy.CardAttributes({
+            game: "Pokemon",
+            language: "EN",
+            setName: "Base Set",
+            cardName: "Charizard",
+            cardNumber: "4/102",
+            printing: "1st Edition",
+            grader: "PSA",
+            grade: "8"
+        });
+
+        // Exact 9 policy checks
+        vm.startPrank(minter);
+        (, bool exact9Matches9) = exact9Policy.registerCardType(psa9Card);
+        assertTrue(exact9Matches9);
+
+        (, bool exact9Matches8) = exact9Policy.registerCardType(psa8Card);
+        assertFalse(exact9Matches8);
+
+        (, bool exact9Matches10) = exact9Policy.registerCardType(psa10Card);
+        assertFalse(exact9Matches10);
+
+        // Exact 10 policy checks
+        (, bool exact10Matches10) = exact10Policy.registerCardType(psa10Card);
+        assertTrue(exact10Matches10);
+
+        (, bool exact10Matches9) = exact10Policy.registerCardType(psa9Card);
+        assertFalse(exact10Matches9);
+        vm.stopPrank();
+    }
+
     function test_SetCardTypeOverride_Success() public {
         bytes32 cardTypeId = psa10Policy.computeCardTypeId(psa9Card);
         assertFalse(psa10Policy.isCardTypeEligible(cardTypeId));
