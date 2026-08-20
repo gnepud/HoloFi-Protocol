@@ -73,7 +73,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
 
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
     );
 
     // Borrow $4,000 (total FMV = $10,000, max borrow = $5,000)
@@ -82,7 +82,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     // Oracle drops card FMV so HF < 1.0 (card 1 dropped to $1,000, total FMV = $5,000)
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("1000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("1000", 18), ethers.parseUnits("4000", 18)]
     );
 
     const auctionAddr = await dutchAuction.getAddress();
@@ -165,7 +165,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
 
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
     );
 
     await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6));
@@ -173,7 +173,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     // Drop FMV so HF < 1.0
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("1000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("1000", 18), ethers.parseUnits("4000", 18)]
     );
 
     const auctionAddr = await dutchAuction.getAddress();

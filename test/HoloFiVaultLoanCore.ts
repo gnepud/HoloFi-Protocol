@@ -163,11 +163,11 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     // Vault 2 bound to WETH pool (40% max LTV, 60% LT)
     await loanCore.connect(store).createVault(poolWethAddr);
 
-    const fmv = ethers.parseUnits("10000", 6);
+    const fmv = ethers.parseUnits("10000", 18);
 
     // Max borrow capacity check
     expect(await loanCore.getMaxBorrowCapacity(1n, fmv)).to.equal(ethers.parseUnits("5000", 6));
-    expect(await loanCore.getMaxBorrowCapacity(2n, fmv)).to.equal(ethers.parseUnits("4000", 6));
+    expect(await loanCore.getMaxBorrowCapacity(2n, fmv)).to.equal(ethers.parseUnits("4000", 18));
 
     // Zero debt health factor check
     expect(await loanCore.getHealthFactor(1n, fmv)).to.equal(ethers.MaxUint256);
@@ -177,7 +177,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
   it("Should calculate max borrow capacity correctly", async function () {
     const { loanCore, store, poolEurcAddr } = await networkHelpers.loadFixture(deployLoanCoreFixture);
     await loanCore.connect(store).createVault(poolEurcAddr);
-    const fmv = ethers.parseUnits("10000", 6);
+    const fmv = ethers.parseUnits("10000", 18);
     expect(await loanCore.getMaxBorrowCapacity(1n, fmv)).to.equal(ethers.parseUnits("5000", 6));
   });
 
@@ -189,10 +189,10 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
 
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
     );
 
-    const fmv = ethers.parseUnits("10000", 6);
+    const fmv = ethers.parseUnits("10000", 18);
 
     const zeroDebtHf = await loanCore.getHealthFactor(1n, fmv);
     expect(zeroDebtHf).to.equal(ethers.MaxUint256);
@@ -214,10 +214,10 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
 
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
     );
 
-    expect(await loanCore.getVaultFMV(1n)).to.equal(ethers.parseUnits("10000", 6));
+    expect(await loanCore.getVaultFMV(1n)).to.equal(ethers.parseUnits("10000", 18));
 
     const borrowAmount = ethers.parseUnits("4000", 6);
 
@@ -246,7 +246,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
 
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
     );
 
     const borrowTx = await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6));
@@ -300,7 +300,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
 
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
     );
 
     // Borrow $2,500 (total FMV = $10,000, max borrow = $5,000)
@@ -326,7 +326,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
 
     await priceFeed.connect(minter).setBatchPrices(
       [cardTypeId1, cardTypeId2],
-      [ethers.parseUnits("6000", 6), ethers.parseUnits("4000", 6)]
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
     );
 
     await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6));
@@ -467,5 +467,77 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       loanCore.connect(store).depositCollateral(vault2Id, [psa10TokenId2])
     ).to.be.revertedWithCustomError(loanCore, "IneligibleCollateral")
      .withArgs(psa10TokenId2, psa10CardTypeId, deluxePoolAddr);
+  });
+
+  it("C-02: Should properly normalize 18-decimal oracle prices across 6-decimal, 8-decimal, and 18-decimal pools", async function () {
+    const { loanCore, poolFactory, admin, store, vaultCard, priceFeed, minter, cardTypeId1, poolEurcAddr } =
+      await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    // 1. Deploy 18-decimal DAI pool and 8-decimal WBTC pool
+    const dai = await ethers.deployContract("MockERC20", ["Dai Stablecoin", "DAI", 18]);
+    await poolFactory.connect(admin).createPool(
+      await dai.getAddress(),
+      "Pool DAI",
+      "pDAI",
+      5000n, // 50% max LTV
+      7000n, // 70% LT
+      1000n, // 10% penalty
+      500n   // 5% rate
+    );
+    const poolDaiAddr = await poolFactory.getPool(await dai.getAddress());
+    const poolDai = await ethers.getContractAt("HoloFiLendingPool", poolDaiAddr);
+    await poolDai.connect(admin).setLoanCore(await loanCore.getAddress());
+    await dai.mint(poolDaiAddr, ethers.parseUnits("1000000", 18));
+
+    const wbtc = await ethers.deployContract("MockERC20", ["Wrapped Bitcoin", "WBTC", 8]);
+    await poolFactory.connect(admin).createPool(
+      await wbtc.getAddress(),
+      "Pool WBTC",
+      "pWBTC",
+      5000n,
+      7000n,
+      1000n,
+      500n
+    );
+    const poolWbtcAddr = await poolFactory.getPool(await wbtc.getAddress());
+    const poolWbtc = await ethers.getContractAt("HoloFiLendingPool", poolWbtcAddr);
+    await poolWbtc.connect(admin).setLoanCore(await loanCore.getAddress());
+    await wbtc.mint(poolWbtcAddr, ethers.parseUnits("1000000", 8));
+
+    // 2. Set oracle card price: $10,000 USD (18 decimals)
+    await priceFeed.connect(minter).setPrice(cardTypeId1, ethers.parseUnits("10000", 18));
+
+    // 3. Vault 1: 6-decimal EURC pool
+    await loanCore.connect(store).createVault(poolEurcAddr);
+    await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(1n, [1n]);
+
+    expect(await loanCore.getMaxBorrowCapacity(1n, ethers.parseUnits("10000", 18)))
+      .to.equal(ethers.parseUnits("5000", 6));
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("5000", 6));
+    expect(await loanCore.getHealthFactor(1n, ethers.parseUnits("10000", 18)))
+      .to.equal(ethers.parseEther("1.4"));
+
+    // 4. Vault 2: 18-decimal DAI pool
+    await vaultCard.connect(minter).mintCard(store.address, cardTypeId1, ethers.keccak256(ethers.toUtf8Bytes("dai_card")), "ipfs://dai");
+    await loanCore.connect(store).createVault(poolDaiAddr);
+    await loanCore.connect(store).depositCollateral(2n, [3n]);
+
+    expect(await loanCore.getMaxBorrowCapacity(2n, ethers.parseUnits("10000", 18)))
+      .to.equal(ethers.parseUnits("5000", 18));
+    await loanCore.connect(store).borrow(2n, ethers.parseUnits("5000", 18));
+    expect(await loanCore.getHealthFactor(2n, ethers.parseUnits("10000", 18)))
+      .to.equal(ethers.parseEther("1.4"));
+
+    // 5. Vault 3: 8-decimal WBTC pool
+    await vaultCard.connect(minter).mintCard(store.address, cardTypeId1, ethers.keccak256(ethers.toUtf8Bytes("wbtc_card")), "ipfs://wbtc");
+    await loanCore.connect(store).createVault(poolWbtcAddr);
+    await loanCore.connect(store).depositCollateral(3n, [4n]);
+
+    expect(await loanCore.getMaxBorrowCapacity(3n, ethers.parseUnits("10000", 18)))
+      .to.equal(ethers.parseUnits("5000", 8));
+    await loanCore.connect(store).borrow(3n, ethers.parseUnits("5000", 8));
+    expect(await loanCore.getHealthFactor(3n, ethers.parseUnits("10000", 18)))
+      .to.equal(ethers.parseEther("1.4"));
   });
 });

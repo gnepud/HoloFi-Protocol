@@ -241,7 +241,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         uint256 vault2 = loanCore.createVault(address(poolCustom));
         vm.stopPrank();
 
-        uint256 fmv = 10_000 * 1e6;
+        uint256 fmv = 10_000 * 1e18;
         assertEq(loanCore.getMaxBorrowCapacity(vault1, fmv), 5_000 * 1e6); // 50% LTV
         assertEq(loanCore.getMaxBorrowCapacity(vault2, fmv), 6_000 * 1e6); // 60% LTV
     }
@@ -249,7 +249,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     function test_GetMaxBorrowCapacity() public {
         vm.prank(store);
         uint256 vaultId = loanCore.createVault(address(pool));
-        uint256 fmv = 10_000 * 1e6; // $10,000 EURC
+        uint256 fmv = 10_000 * 1e18; // $10,000 USD
         uint256 maxBorrow = loanCore.getMaxBorrowCapacity(vaultId, fmv);
         assertEq(maxBorrow, 5_000 * 1e6); // 50% LTV = $5,000 EURC
     }
@@ -257,7 +257,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     function test_GetHealthFactor_ZeroDebt() public {
         vm.prank(store);
         uint256 vaultId = loanCore.createVault(address(pool));
-        uint256 hf = loanCore.getHealthFactor(vaultId, 10_000 * 1e6);
+        uint256 hf = loanCore.getHealthFactor(vaultId, 10_000 * 1e18);
         assertEq(hf, type(uint256).max);
     }
 
@@ -274,17 +274,17 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokens);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
         // Safe debt = $5,000 -> HF = (10,000 * 0.7) / 5,000 = 1.4
         vm.prank(store);
         loanCore.borrow(vaultId, 5_000 * 1e6);
-        assertEq(loanCore.getHealthFactor(vaultId, fmv), 1.4e18);
+        assertEq(loanCore.getHealthFactor(vaultId, 10_000 * 1e18), 1.4e18);
 
         // Undercollateralized FMV = $6,250 -> LT=70% -> HF = (6,250 * 0.7) / 5,000 = 0.875
-        assertEq(loanCore.getHealthFactor(vaultId, 6_250 * 1e6), 0.875e18);
+        assertEq(loanCore.getHealthFactor(vaultId, 6_250 * 1e18), 0.875e18);
     }
 
     function test_AccrueInterest_TimeWarp() public {
@@ -299,7 +299,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokens);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 30_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 30_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -324,9 +324,9 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
 
     function test_SetCardPrice_Success() public {
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
         (uint256 price, ) = priceFeed.getPrice(cardTypeId1);
-        assertEq(price, 5_000 * 1e6);
+        assertEq(price, 5_000 * 1e18);
     }
 
     function test_SetBatchCardPrices_Success() public {
@@ -335,22 +335,22 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         cardTypeIds[1] = cardTypeId2;
 
         uint128[] memory fmvs = new uint128[](2);
-        fmvs[0] = 6_000 * 1e6;
-        fmvs[1] = 4_000 * 1e6;
+        fmvs[0] = 6_000 * 1e18;
+        fmvs[1] = 4_000 * 1e18;
 
         vm.prank(oracle);
         priceFeed.setBatchPrices(cardTypeIds, fmvs);
 
         (uint256 price1, ) = priceFeed.getPrice(cardTypeId1);
         (uint256 price2, ) = priceFeed.getPrice(cardTypeId2);
-        assertEq(price1, 6_000 * 1e6);
-        assertEq(price2, 4_000 * 1e6);
+        assertEq(price1, 6_000 * 1e18);
+        assertEq(price2, 4_000 * 1e18);
     }
 
     function test_RevertIf_SetCardPrice_Unauthorized() public {
         vm.prank(unauthorized);
         vm.expectRevert(abi.encodeWithSelector(HoloFiCardPriceFeed.UnauthorizedOracle.selector, unauthorized));
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
     }
 
     function test_RevertIf_SetBatchCardPrices_LengthMismatch() public {
@@ -359,7 +359,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         cardTypeIds[1] = cardTypeId2;
 
         uint128[] memory fmvs = new uint128[](1);
-        fmvs[0] = 6_000 * 1e6;
+        fmvs[0] = 6_000 * 1e18;
 
         vm.prank(oracle);
         vm.expectRevert(abi.encodeWithSelector(HoloFiCardPriceFeed.ArrayLengthMismatch.selector));
@@ -381,11 +381,11 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.startPrank(oracle);
-        priceFeed.setPrice(cardTypeId1, 6_000 * 1e6);
-        priceFeed.setPrice(cardTypeId2, 4_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 6_000 * 1e18);
+        priceFeed.setPrice(cardTypeId2, 4_000 * 1e18);
         vm.stopPrank();
 
-        assertEq(loanCore.getVaultFMV(vaultId), 10_000 * 1e6);
+        assertEq(loanCore.getVaultFMV(vaultId), 10_000 * 1e18);
     }
 
     function test_Borrow_Success() public {
@@ -403,7 +403,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -429,7 +429,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         vm.prank(store);
         vm.expectRevert(
@@ -481,7 +481,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -518,7 +518,7 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -579,8 +579,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.startPrank(oracle);
-        priceFeed.setPrice(cardTypeId1, 6_000 * 1e6);
-        priceFeed.setPrice(cardTypeId2, 4_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 6_000 * 1e18);
+        priceFeed.setPrice(cardTypeId2, 4_000 * 1e18);
         vm.stopPrank();
 
         eurc.mint(address(pool), 100_000 * 1e6);
@@ -614,8 +614,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.startPrank(oracle);
-        priceFeed.setPrice(cardTypeId1, 6_000 * 1e6);
-        priceFeed.setPrice(cardTypeId2, 4_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 6_000 * 1e18);
+        priceFeed.setPrice(cardTypeId2, 4_000 * 1e18);
         vm.stopPrank();
 
         eurc.mint(address(pool), 100_000 * 1e6);
@@ -655,8 +655,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.startPrank(oracle);
-        priceFeed.setPrice(cardTypeId1, 6_000 * 1e6);
-        priceFeed.setPrice(cardTypeId2, 4_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 6_000 * 1e18);
+        priceFeed.setPrice(cardTypeId2, 4_000 * 1e18);
         vm.stopPrank();
 
         eurc.mint(address(pool), 100_000 * 1e6);
@@ -780,5 +780,85 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
             )
         );
         loanCore.depositCollateral(vaultId, tokenIds);
+    }
+
+    function test_C02_MultiDecimalPoolBorrowAndHealthFactor() public {
+        // Test 18-decimal oracle price ($10,000 USD) across:
+        // 1. EURC (6 decimals)
+        // 2. DAI / WETH (18 decimals)
+        // 3. WBTC (8 decimals)
+
+        // 1. Setup 18-decimal token pool (e.g. DAI)
+        MockERC20 dai = new MockERC20("Dai Stablecoin", "DAI", 18);
+        vm.prank(admin);
+        poolFactory.createPool(dai, "Pool DAI", "pDAI", 5000, 7000, 1000, 500);
+        HoloFiLendingPool daiPool = HoloFiLendingPool(poolFactory.getPool(address(dai)));
+        vm.prank(admin);
+        daiPool.setLoanCore(address(loanCore));
+        dai.mint(address(daiPool), 1_000_000 * 1e18);
+
+        // 2. Setup 8-decimal token pool (e.g. WBTC)
+        MockERC20 wbtc = new MockERC20("Wrapped BTC", "WBTC", 8);
+        vm.prank(admin);
+        poolFactory.createPool(wbtc, "Pool WBTC", "pWBTC", 5000, 7000, 1000, 500);
+        HoloFiLendingPool wbtcPool = HoloFiLendingPool(poolFactory.getPool(address(wbtc)));
+        vm.prank(admin);
+        wbtcPool.setLoanCore(address(loanCore));
+        wbtc.mint(address(wbtcPool), 1_000_000 * 1e8);
+
+        // Oracle sets 18-decimal USD price for cardTypeId1 = $10,000 USD
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
+
+        // --- Test EURC (6 decimals) ---
+        vm.prank(store);
+        uint256 eurcVaultId = loanCore.createVault(address(pool));
+        vm.prank(store);
+        vaultCard.setApprovalForAll(address(loanCore), true);
+        uint256[] memory tokensEurc = new uint256[](1);
+        tokensEurc[0] = cardId1;
+        vm.prank(store);
+        loanCore.depositCollateral(eurcVaultId, tokensEurc);
+
+        eurc.mint(address(pool), 1_000_000 * 1e6);
+
+        // 50% LTV on $10,000 USD = 5,000 EURC (6 decimals)
+        assertEq(loanCore.getMaxBorrowCapacity(eurcVaultId, 10_000 * 1e18), 5_000 * 1e6);
+        vm.prank(store);
+        loanCore.borrow(eurcVaultId, 5_000 * 1e6);
+        // Health factor: (5,000 normalized * 70%) / 5,000 debt = 1.4e18
+        assertEq(loanCore.getHealthFactor(eurcVaultId, 10_000 * 1e18), 1.4e18);
+
+        // --- Test DAI (18 decimals) ---
+        vm.prank(minter);
+        uint256 cardId3 = vaultCard.mintCard(store, cardTypeId1, keccak256("raw_data_3"), "ipfs://card3");
+        vm.prank(store);
+        uint256 daiVaultId = loanCore.createVault(address(daiPool));
+        uint256[] memory tokensDai = new uint256[](1);
+        tokensDai[0] = cardId3;
+        vm.prank(store);
+        loanCore.depositCollateral(daiVaultId, tokensDai);
+
+        // 50% LTV on $10,000 USD = 5,000 DAI (18 decimals)
+        assertEq(loanCore.getMaxBorrowCapacity(daiVaultId, 10_000 * 1e18), 5_000 * 1e18);
+        vm.prank(store);
+        loanCore.borrow(daiVaultId, 5_000 * 1e18);
+        assertEq(loanCore.getHealthFactor(daiVaultId, 10_000 * 1e18), 1.4e18);
+
+        // --- Test WBTC (8 decimals) ---
+        vm.prank(minter);
+        uint256 cardId4 = vaultCard.mintCard(store, cardTypeId1, keccak256("raw_data_4"), "ipfs://card4");
+        vm.prank(store);
+        uint256 wbtcVaultId = loanCore.createVault(address(wbtcPool));
+        uint256[] memory tokensWbtc = new uint256[](1);
+        tokensWbtc[0] = cardId4;
+        vm.prank(store);
+        loanCore.depositCollateral(wbtcVaultId, tokensWbtc);
+
+        // 50% LTV on $10,000 USD = 5,000 WBTC (8 decimals)
+        assertEq(loanCore.getMaxBorrowCapacity(wbtcVaultId, 10_000 * 1e18), 5_000 * 1e8);
+        vm.prank(store);
+        loanCore.borrow(wbtcVaultId, 5_000 * 1e8);
+        assertEq(loanCore.getHealthFactor(wbtcVaultId, 10_000 * 1e18), 1.4e18);
     }
 }

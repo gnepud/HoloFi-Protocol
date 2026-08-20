@@ -133,7 +133,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -144,7 +144,7 @@ contract HoloFiDutchAuctionTest is Test {
         // Oracle drops FMV of cardId1 from $10,000 to $5,000
         // Debt = $4,000, Liquidation threshold = 70% -> max threshold value = $3,500. HF = 3,500 / 4,000 = 0.875 < 1.0
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         dutchAuction.startAuction(vaultId);
 
@@ -171,7 +171,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -181,7 +181,7 @@ contract HoloFiDutchAuctionTest is Test {
 
         // Drop FMV to $5,000 -> HF = 3,500 / 4,000 = 0.875 < 1.0
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         dutchAuction.startAuction(vaultId);
 
@@ -206,7 +206,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -238,7 +238,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -246,7 +246,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         dutchAuction.startAuction(vaultId);
 
@@ -280,7 +280,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -290,7 +290,7 @@ contract HoloFiDutchAuctionTest is Test {
 
         // Drop FMV to $5,000 -> HF = 3,500 / 4,000 = 0.875 < 1.0
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         dutchAuction.startAuction(vaultId);
 
@@ -328,7 +328,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -337,7 +337,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         dutchAuction.startAuction(vaultId);
 
@@ -377,7 +377,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -385,7 +385,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         dutchAuction.startAuction(vaultId);
 
@@ -424,7 +424,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -432,7 +432,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         mockAuction.startAuction(vaultId);
 
@@ -503,7 +503,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -511,7 +511,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         dutchAuction.startAuction(vaultId);
 
@@ -548,7 +548,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.depositCollateral(vaultId, tokenIds);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 10_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
 
         eurc.mint(address(pool), 100_000 * 1e6);
 
@@ -556,7 +556,7 @@ contract HoloFiDutchAuctionTest is Test {
         loanCore.borrow(vaultId, 4_000 * 1e6);
 
         vm.prank(oracle);
-        priceFeed.setPrice(cardTypeId1, 5_000 * 1e6);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
 
         dutchAuction.startAuction(vaultId);
 

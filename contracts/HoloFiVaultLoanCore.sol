@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import { DecimalMath } from "./libraries/DecimalMath.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiVaultCard } from "./HoloFiVaultCard.sol";
 import { HoloFiCardPriceFeed } from "./HoloFiCardPriceFeed.sol";
@@ -155,14 +156,18 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
             return type(uint256).max;
         }
         address pool = vaults[vaultId].lendingPool;
+        address asset = HoloFiLendingPool(pool).asset();
+        uint256 normalizedFmv = DecimalMath.normalizeToAsset(vaultFmv, asset);
         uint256 ltBps = HoloFiLendingPool(pool).liquidationThresholdBps();
-        return (vaultFmv * ltBps * HEALTH_FACTOR_PRECISION) / (totalDebt * BPS_DENOMINATOR);
+        return (normalizedFmv * ltBps * HEALTH_FACTOR_PRECISION) / (totalDebt * BPS_DENOMINATOR);
     }
 
     function getMaxBorrowCapacity(uint256 vaultId, uint256 vaultFmv) public view returns (uint256) {
         address pool = vaults[vaultId].lendingPool;
+        address asset = HoloFiLendingPool(pool).asset();
         uint256 maxLtvBps = HoloFiLendingPool(pool).maxLtvBps();
-        return (vaultFmv * maxLtvBps) / BPS_DENOMINATOR;
+        uint256 maxBorrow18 = (vaultFmv * maxLtvBps) / BPS_DENOMINATOR;
+        return DecimalMath.normalizeToAsset(maxBorrow18, asset);
     }
 
     function onERC721Received(

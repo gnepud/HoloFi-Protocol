@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { DecimalMath } from "./libraries/DecimalMath.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
@@ -94,9 +95,12 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         loanCore.startLiquidation(vaultId);
 
         HoloFiVaultLoanCore.CollateralVault memory vault = loanCore.getVault(vaultId);
-        uint256 startFmv = loanCore.getVaultFMV(vaultId);
+        address lendingPool = vault.lendingPool;
+        address poolAsset = HoloFiLendingPool(lendingPool).asset();
+        uint256 startFmv18 = loanCore.getVaultFMV(vaultId);
+        uint256 startFmv = DecimalMath.normalizeToAsset(startFmv18, poolAsset);
         uint256 totalDebt = loanCore.getTotalDebt(vaultId);
-        uint256 penaltyBps = HoloFiLendingPool(vault.lendingPool).liquidationPenaltyBps();
+        uint256 penaltyBps = HoloFiLendingPool(lendingPool).liquidationPenaltyBps();
 
         uint256 penaltyAmount = (totalDebt * penaltyBps) / BPS_DENOMINATOR;
         uint256 reservePrice = totalDebt + penaltyAmount;
