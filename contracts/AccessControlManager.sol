@@ -38,7 +38,6 @@ contract AccessControlManager is AccessControl {
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(ADMIN_ROLE, initialAdmin);
 
-        _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
         _setRoleAdmin(ORACLE_ROLE, ADMIN_ROLE);
         _setRoleAdmin(KYB_MANAGER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);

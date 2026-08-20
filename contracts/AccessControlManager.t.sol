@@ -37,7 +37,7 @@ contract AccessControlManagerTest is Test {
     }
 
     function test_AdminRoleHierarchy() public view {
-        assertEq(acm.getRoleAdmin(adminRole), adminRole);
+        assertEq(acm.getRoleAdmin(adminRole), acm.DEFAULT_ADMIN_ROLE());
         assertEq(acm.getRoleAdmin(oracleRole), adminRole);
         assertEq(acm.getRoleAdmin(kybManagerRole), adminRole);
         assertEq(acm.getRoleAdmin(pauserRole), adminRole);
@@ -47,6 +47,37 @@ contract AccessControlManagerTest is Test {
     function test_MinterRoleHierarchy() public view {
         assertEq(acm.getRoleAdmin(acm.MINTER_ROLE()), acm.ADMIN_ROLE());
         assertEq(acm.getRoleAdmin(acm.LOCKER_ROLE()), acm.ADMIN_ROLE());
+    }
+
+    function test_RootAdminCanGrantAndRevokeAdminRole() public {
+        address newAdmin = address(0x8888);
+        vm.startPrank(admin);
+        acm.grantRole(adminRole, newAdmin);
+        assertTrue(acm.hasRole(adminRole, newAdmin));
+
+        acm.revokeRole(adminRole, newAdmin);
+        assertFalse(acm.hasRole(adminRole, newAdmin));
+        vm.stopPrank();
+    }
+
+    function test_RevertIf_AdminRoleCannotGrantAdminRoleWithoutDefaultAdmin() public {
+        address opAdmin = address(0x8888);
+        address target = address(0x9999);
+
+        // admin (holding DEFAULT_ADMIN_ROLE) gives opAdmin only ADMIN_ROLE
+        vm.prank(admin);
+        acm.grantRole(adminRole, opAdmin);
+
+        // opAdmin cannot grant ADMIN_ROLE because RoleAdmin of ADMIN_ROLE is DEFAULT_ADMIN_ROLE
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                opAdmin,
+                acm.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(opAdmin);
+        acm.grantRole(adminRole, target);
     }
 
     function test_GrantAndRevokeRolesByAdmin() public {

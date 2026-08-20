@@ -105,5 +105,27 @@ describe("AccessControlManager Integration Tests", function () {
       acm.connect(admin).setKybStatus(ethers.ZeroAddress, true)
     ).to.be.revertedWithCustomError(acm, "ZeroAddressKybAccount");
   });
+
+  it("Should maintain DEFAULT_ADMIN_ROLE as RoleAdmin of ADMIN_ROLE", async function () {
+    const { acm, admin, user, oracle } = await networkHelpers.loadFixture(deployAcmFixture);
+    const defaultAdminRole = await acm.DEFAULT_ADMIN_ROLE();
+    const adminRole = await acm.ADMIN_ROLE();
+
+    expect(await acm.getRoleAdmin(adminRole)).to.equal(defaultAdminRole);
+
+    // admin (has DEFAULT_ADMIN_ROLE) can grant and revoke ADMIN_ROLE
+    await acm.connect(admin).grantRole(adminRole, user.address);
+    expect(await acm.hasRole(adminRole, user.address)).to.be.true;
+
+    // user (has only ADMIN_ROLE) cannot grant ADMIN_ROLE
+    await expect(
+      acm.connect(user).grantRole(adminRole, oracle.address)
+    ).to.be.revertedWithCustomError(acm, "AccessControlUnauthorizedAccount")
+     .withArgs(user.address, defaultAdminRole);
+
+    // admin can revoke ADMIN_ROLE
+    await acm.connect(admin).revokeRole(adminRole, user.address);
+    expect(await acm.hasRole(adminRole, user.address)).to.be.false;
+  });
 });
 
