@@ -7,17 +7,35 @@
       "skillPath": "skills/develop-secure-contracts/SKILL.md",
       "computedHash": "92aa3881d7c5db98ce41670852668cfbe691576284d05d78a72587cdb2760fe8"
     },
+    "fizz": {
+      "source": "pashov/skills",
+      "sourceType": "github",
+      "skillPath": "fizz/SKILL.md",
+      "computedHash": "bc620ba21ec43fedf0ccec9366c16f865762c9057df213c6bec49ea18afffa1b"
+    },
     "setup-solidity-contracts": {
       "source": "OpenZeppelin/openzeppelin-skills",
       "sourceType": "github",
       "skillPath": "skills/setup-solidity-contracts/SKILL.md",
       "computedHash": "9c0e45a4afb334c5460811d1c2db5ba7d7756f9e401b250921322c6aab86be64"
     },
+    "solidity-auditor": {
+      "source": "pashov/skills",
+      "sourceType": "github",
+      "skillPath": "solidity-auditor/SKILL.md",
+      "computedHash": "30520e29d67753d3594dbab73202fe96d1cd8679c93438c5027f3b2c51f8140b"
+    },
     "upgrade-solidity-contracts": {
       "source": "OpenZeppelin/openzeppelin-skills",
       "sourceType": "github",
       "skillPath": "skills/upgrade-solidity-contracts/SKILL.md",
       "computedHash": "ef8776be9fd2ee6721f6b6b29992bf6029a6122797b3cec6fe3ce185b22be4ef"
+    },
+    "x-ray": {
+      "source": "pashov/skills",
+      "sourceType": "github",
+      "skillPath": "x-ray/SKILL.md",
+      "computedHash": "e8e2bd74d174c8dcb1ae0e7e21c42e311e58c9d4cb5528e10a6cf19bfed9292a"
     }
   }
 }
