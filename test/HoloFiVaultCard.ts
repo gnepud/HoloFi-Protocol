@@ -140,18 +140,19 @@ describe("HoloFiVaultCard Integration Tests", function () {
   it("Should allow owner or approved operator to burn card and emit CardBurned event", async function () {
     const { vaultCard, minter, user, unauthorized } = await networkHelpers.loadFixture(deployVaultCardFixture);
     const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
-    const attestationHash = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert"));
+    const attestationHash1 = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert:1"));
+    const attestationHash2 = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert:2"));
 
     // Mint token 1 to user
-    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI1");
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash1, "ipfs://QmURI1");
 
     // Mint token 2 to user
-    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI2");
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash2, "ipfs://QmURI2");
 
     // 1. Owner burns token 1
     await expect(vaultCard.connect(user).burnCard(1n))
       .to.emit(vaultCard, "CardBurned")
-      .withArgs(1n, user.address, cardTypeId, attestationHash);
+      .withArgs(1n, user.address, cardTypeId, attestationHash1);
 
     await expect(vaultCard.ownerOf(1n)).to.be.revertedWithCustomError(vaultCard, "ERC721NonexistentToken").withArgs(1n);
     await expect(vaultCard.getCard(1n)).to.be.revertedWithCustomError(vaultCard, "TokenDoesNotExist").withArgs(1n);
@@ -164,7 +165,7 @@ describe("HoloFiVaultCard Integration Tests", function () {
     await vaultCard.connect(user).approve(unauthorized.address, 2n);
     await expect(vaultCard.connect(unauthorized).burnCard(2n))
       .to.emit(vaultCard, "CardBurned")
-      .withArgs(2n, user.address, cardTypeId, attestationHash);
+      .withArgs(2n, user.address, cardTypeId, attestationHash2);
 
     await expect(vaultCard.ownerOf(2n)).to.be.revertedWithCustomError(vaultCard, "ERC721NonexistentToken").withArgs(2n);
     await expect(vaultCard.getCard(2n)).to.be.revertedWithCustomError(vaultCard, "TokenDoesNotExist").withArgs(2n);
@@ -195,6 +196,36 @@ describe("HoloFiVaultCard Integration Tests", function () {
       vaultCard.connect(unauthorized).burnCard(1n)
     ).to.be.revertedWithCustomError(vaultCard, "UnauthorizedBurner")
       .withArgs(unauthorized.address);
+  });
+
+  it("H-03: Should revert when attempting to mint with an already used attestation hash", async function () {
+    const { vaultCard, minter, user } = await networkHelpers.loadFixture(deployVaultCardFixture);
+    const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
+    const attestationHash = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert:Unique123"));
+
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI1");
+    expect(await vaultCard.isAttestationUsed(attestationHash)).to.be.true;
+
+    await expect(
+      vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI2")
+    ).to.be.revertedWithCustomError(vaultCard, "AttestationAlreadyUsed")
+      .withArgs(attestationHash);
+  });
+
+  it("H-03: Should allow re-minting with attestation hash after card is burned", async function () {
+    const { vaultCard, minter, user } = await networkHelpers.loadFixture(deployVaultCardFixture);
+    const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
+    const attestationHash = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert:Unique456"));
+
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI1");
+    expect(await vaultCard.isAttestationUsed(attestationHash)).to.be.true;
+
+    await vaultCard.connect(user).burnCard(1n);
+    expect(await vaultCard.isAttestationUsed(attestationHash)).to.be.false;
+
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURIReMint");
+    expect(await vaultCard.ownerOf(2n)).to.equal(user.address);
+    expect(await vaultCard.isAttestationUsed(attestationHash)).to.be.true;
   });
 });
 

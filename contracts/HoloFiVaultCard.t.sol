@@ -211,4 +211,29 @@ contract HoloFiVaultCardTest is Test {
         vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.TokenDoesNotExist.selector, 999));
         vaultCard.burnCard(999);
     }
+
+    function test_H03_RevertIf_DuplicateAttestationHash() public {
+        vm.startPrank(minter);
+        vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash1");
+
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultCard.AttestationAlreadyUsed.selector, TEST_ATTESTATION));
+        vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash2");
+        vm.stopPrank();
+    }
+
+    function test_H03_BurnCard_AllowsAttestationReuse() public {
+        vm.prank(minter);
+        uint256 tokenId = vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash1");
+        assertTrue(vaultCard.isAttestationUsed(TEST_ATTESTATION));
+
+        vm.prank(user);
+        vaultCard.burnCard(tokenId);
+        assertFalse(vaultCard.isAttestationUsed(TEST_ATTESTATION));
+
+        // Re-minting with same attestation hash should succeed after burn
+        vm.prank(minter);
+        uint256 newTokenId = vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHashReMint");
+        assertEq(newTokenId, 2);
+        assertTrue(vaultCard.isAttestationUsed(TEST_ATTESTATION));
+    }
 }

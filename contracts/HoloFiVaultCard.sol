@@ -18,6 +18,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
     }
 
     mapping(uint256 => CardMetadata) public cards;
+    mapping(bytes32 => bool) public isAttestationUsed;
     uint256 public nextTokenId;
     AccessControlManager public immutable acm;
 
@@ -34,6 +35,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
     error ZeroAddressRecipient();
     error ZeroCardTypeId();
     error InvalidAttestationHash();
+    error AttestationAlreadyUsed(bytes32 attestationHash);
     error UnauthorizedMinter(address caller);
     error UnauthorizedLockOperator(address caller);
     error UnauthorizedBurner(address caller);
@@ -80,6 +82,9 @@ contract HoloFiVaultCard is ERC721URIStorage {
         if (attestationHash == bytes32(0)) {
             revert InvalidAttestationHash();
         }
+        if (isAttestationUsed[attestationHash]) {
+            revert AttestationAlreadyUsed(attestationHash);
+        }
 
         uint256 tokenId = nextTokenId++;
 
@@ -90,6 +95,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
             mintTimestamp: block.timestamp,
             isLocked: false
         });
+        isAttestationUsed[attestationHash] = true;
 
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, tokenUri);
@@ -125,6 +131,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
         bytes32 cardTypeId = cards[tokenId].cardTypeId;
         bytes32 attestationHash = cards[tokenId].attestationHash;
         delete cards[tokenId];
+        delete isAttestationUsed[attestationHash];
 
         _burn(tokenId);
 
