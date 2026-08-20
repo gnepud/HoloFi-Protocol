@@ -201,15 +201,22 @@ contract HoloFiLendingPoolTest is Test {
         eurc.approve(address(poolEurc), 450 * 1e6);
 
         vm.prank(loanCore);
-        poolEurc.returnLiquidity(borrower, 450 * 1e6);
+        poolEurc.returnLiquidity(borrower, 400 * 1e6, 450 * 1e6);
 
         assertEq(eurc.balanceOf(address(poolEurc)), 1050 * 1e6);
+        assertEq(poolEurc.totalBorrows(), 0);
     }
 
     function test_RevertIf_UnauthorizedReturnLiquidity() public {
         vm.prank(unauthorized);
         vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.UnauthorizedLoanCore.selector, unauthorized));
-        poolEurc.returnLiquidity(borrower, 100 * 1e6);
+        poolEurc.returnLiquidity(borrower, 100 * 1e6, 100 * 1e6);
+    }
+
+    function test_RevertIf_InvalidRepaymentAmounts() public {
+        vm.prank(loanCore);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.InvalidRepaymentAmounts.selector, 500 * 1e6, 400 * 1e6));
+        poolEurc.returnLiquidity(borrower, 500 * 1e6, 400 * 1e6);
     }
 
     function test_RevertIf_TransferShareToken() public {
@@ -335,10 +342,48 @@ contract HoloFiLendingPoolTest is Test {
         vm.stopPrank();
 
         vm.prank(loanCore);
-        poolEurc.returnLiquidity(borrower, 94_500 * 1e6);
+        poolEurc.returnLiquidity(borrower, 90_000 * 1e6, 94_500 * 1e6);
 
         assertEq(poolEurc.totalBorrows(), 0);
         assertEq(poolEurc.totalAssets(), 114_500 * 1e6);
+    }
+
+    function test_MultiBorrower_InterestRepayment_PreservesYieldAndRemainingBorrows() public {
+        // LP deposits 2,000 EURC
+        eurc.mint(lp, 2_000 * 1e6);
+        vm.prank(lp);
+        poolEurc.deposit(2_000 * 1e6, lp);
+
+        address borrower1 = address(0xB1);
+        address borrower2 = address(0xB2);
+
+        // Borrower 1 draws 500 EURC, Borrower 2 draws 500 EURC
+        vm.prank(loanCore);
+        poolEurc.drawLiquidity(borrower1, 500 * 1e6);
+        vm.prank(loanCore);
+        poolEurc.drawLiquidity(borrower2, 500 * 1e6);
+
+        assertEq(poolEurc.totalBorrows(), 1_000 * 1e6);
+        assertEq(eurc.balanceOf(address(poolEurc)), 1_000 * 1e6);
+        assertEq(poolEurc.totalAssets(), 2_000 * 1e6);
+
+        // Borrower 1 repays 500 principal + 50 interest = 550 EURC
+        eurc.mint(borrower1, 550 * 1e6);
+        vm.prank(borrower1);
+        eurc.approve(address(poolEurc), 550 * 1e6);
+
+        vm.prank(loanCore);
+        poolEurc.returnLiquidity(borrower1, 500 * 1e6, 550 * 1e6);
+
+        // totalBorrows must accurately reflect Borrower 2's 500 EURC principal (not 450!)
+        assertEq(poolEurc.totalBorrows(), 500 * 1e6);
+        assertEq(eurc.balanceOf(address(poolEurc)), 1_550 * 1e6);
+        // totalAssets must accurately reflect the 50 EURC interest yield
+        assertEq(poolEurc.totalAssets(), 2_050 * 1e6);
+
+        uint256 lpShares = poolEurc.balanceOf(lp);
+        uint256 redeemable = poolEurc.previewRedeem(lpShares);
+        assertApproxEqAbs(redeemable, 2_050 * 1e6, 1);
     }
 
     function test_H04_Pausable_LendingPool_AccessControl() public {
@@ -424,14 +469,14 @@ contract HoloFiLendingPoolTest is Test {
         // returnLiquidity fails if borrower didn't approve (SafeERC20 reverts)
         vm.prank(loanCore);
         vm.expectRevert();
-        poolEurc.returnLiquidity(borrower, 3_000 * 1e6);
+        poolEurc.returnLiquidity(borrower, 3_000 * 1e6, 3_000 * 1e6);
 
         // returnLiquidity succeeds with safeTransferFrom after approve
         vm.prank(borrower);
         eurc.approve(address(poolEurc), 3_000 * 1e6);
 
         vm.prank(loanCore);
-        poolEurc.returnLiquidity(borrower, 3_000 * 1e6);
+        poolEurc.returnLiquidity(borrower, 3_000 * 1e6, 3_000 * 1e6);
         assertEq(eurc.balanceOf(address(poolEurc)), 10_000 * 1e6);
         assertEq(poolEurc.totalBorrows(), 0);
     }

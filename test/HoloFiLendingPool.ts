@@ -146,9 +146,9 @@ describe("HoloFiLendingPool Integration Tests", function () {
     await mockEurc.connect(borrower).approve(await poolEurc.getAddress(), ethers.MaxUint256);
 
     const returnAmount = ethers.parseUnits("450", 6);
-    await expect(poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, returnAmount))
+    await expect(poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, drawAmount, returnAmount))
       .to.emit(poolEurc, "LiquidityReturned")
-      .withArgs(borrower.address, returnAmount);
+      .withArgs(borrower.address, drawAmount, returnAmount);
 
     expect(await mockEurc.balanceOf(await poolEurc.getAddress())).to.equal(ethers.parseUnits("1050", 6));
   });
@@ -260,7 +260,7 @@ describe("HoloFiLendingPool Integration Tests", function () {
     await mockEurc.mint(borrower.address, repaymentAmount);
     await mockEurc.connect(borrower).approve(await poolEurc.getAddress(), ethers.MaxUint256);
 
-    await poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, repaymentAmount);
+    await poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, borrowAmount, repaymentAmount);
 
     expect(await poolEurc.totalBorrows()).to.equal(0n);
     expect(await poolEurc.totalAssets()).to.equal(ethers.parseUnits("114500", 6));
@@ -337,12 +337,12 @@ describe("HoloFiLendingPool Integration Tests", function () {
 
     // returnLiquidity fails if borrower hasn't approved
     await expect(
-      poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, drawAmount)
+      poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, drawAmount, drawAmount)
     ).to.be.revertedWithCustomError(mockEurc, "ERC20InsufficientAllowance");
 
     // returnLiquidity succeeds after approval
     await mockEurc.connect(borrower).approve(await poolEurc.getAddress(), ethers.MaxUint256);
-    await poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, drawAmount);
+    await poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, drawAmount, drawAmount);
     expect(await poolEurc.totalBorrows()).to.equal(0n);
     expect(await mockEurc.balanceOf(await poolEurc.getAddress())).to.equal(depositAmount);
   });

@@ -33,7 +33,7 @@ contract HoloFiLendingPool is ERC4626, Pausable {
     event LoanCoreUpdated(address indexed newLoanCore);
     event EligibilityPolicyUpdated(address indexed newPolicy);
     event LiquidityDrawn(address indexed borrower, uint256 amount);
-    event LiquidityReturned(address indexed payer, uint256 amount);
+    event LiquidityReturned(address indexed payer, uint256 principalAmount, uint256 totalAmount);
     event RiskParametersUpdated(
         uint256 maxLtvBps,
         uint256 liquidationThresholdBps,
@@ -50,6 +50,7 @@ contract HoloFiLendingPool is ERC4626, Pausable {
     error InsufficientVaultLiquidity(uint256 available, uint256 required);
     error ShareTokenNonTransferable();
     error InvalidRiskParameters();
+    error InvalidRepaymentAmounts(uint256 principalAmount, uint256 totalAmount);
 
     constructor(
         IERC20 asset_,
@@ -171,15 +172,18 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         emit LiquidityDrawn(recipient, amount);
     }
 
-    function returnLiquidity(address payer, uint256 amount) external {
+    function returnLiquidity(address payer, uint256 principalAmount, uint256 totalAmount) external {
+        if (principalAmount > totalAmount) {
+            revert InvalidRepaymentAmounts(principalAmount, totalAmount);
+        }
         address auction = (loanCore != address(0) && loanCore.code.length > 0) ? IHoloFiVaultLoanCore(loanCore).dutchAuction() : address(0);
         if (msg.sender != loanCore && msg.sender != auction && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedLoanCore(msg.sender);
         }
 
-        totalBorrows = (amount >= totalBorrows) ? 0 : (totalBorrows - amount);
-        IERC20(asset()).safeTransferFrom(payer, address(this), amount);
-        emit LiquidityReturned(payer, amount);
+        totalBorrows = (principalAmount >= totalBorrows) ? 0 : (totalBorrows - principalAmount);
+        IERC20(asset()).safeTransferFrom(payer, address(this), totalAmount);
+        emit LiquidityReturned(payer, principalAmount, totalAmount);
     }
 
     function _update(address from, address to, uint256 value) internal override {

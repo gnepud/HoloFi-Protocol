@@ -342,7 +342,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
             vault.principalDebt -= principalPaid;
         }
 
-        HoloFiLendingPool(vault.lendingPool).returnLiquidity(msg.sender, actualRepay);
+        HoloFiLendingPool(vault.lendingPool).returnLiquidity(msg.sender, principalPaid, actualRepay);
 
         emit RepaymentExecuted(
             vaultId,

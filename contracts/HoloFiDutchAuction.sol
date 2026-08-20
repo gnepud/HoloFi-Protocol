@@ -184,8 +184,9 @@ contract HoloFiDutchAuction is ReentrancyGuard, Pausable {
         asset.safeTransferFrom(msg.sender, address(this), currentPrice);
 
         // Step 2: Approve & return loan debt (debtPaid) to LendingPool
+        uint256 principalPaid = vault.principalDebt;
         asset.forceApprove(lendingPool, debtPaid);
-        HoloFiLendingPool(lendingPool).returnLiquidity(address(this), debtPaid);
+        HoloFiLendingPool(lendingPool).returnLiquidity(address(this), principalPaid, debtPaid);
 
         // Step 3: Transfer penalty surcharge directly into LendingPool contract
         if (penaltyPaid > 0) {
@@ -241,8 +242,9 @@ contract HoloFiDutchAuction is ReentrancyGuard, Pausable {
         asset.safeTransferFrom(msg.sender, address(this), debtPaid);
 
         // Step 2: Approve & return debt to LendingPool
+        uint256 principalPaid = vault.principalDebt;
         asset.forceApprove(lendingPool, debtPaid);
-        HoloFiLendingPool(lendingPool).returnLiquidity(address(this), debtPaid);
+        HoloFiLendingPool(lendingPool).returnLiquidity(address(this), principalPaid, debtPaid);
 
         // Step 3: Finalize liquidation & transfer collateral NFTs to treasury
         loanCore.finalizeLiquidation(vaultId, msg.sender);
