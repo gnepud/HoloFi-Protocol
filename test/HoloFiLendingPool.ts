@@ -318,4 +318,32 @@ describe("HoloFiLendingPool Integration Tests", function () {
     await poolEurc.connect(lp).deposit(amount, lp.address);
     expect(await poolEurc.totalAssets()).to.equal(amount);
   });
+
+  it("M-04: Should safely transfer assets via SafeERC20 during drawLiquidity and returnLiquidity", async function () {
+    const { mockEurc, poolEurc, admin, lp, borrower, fakeLoanCore } =
+      await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    await poolEurc.connect(admin).setLoanCore(fakeLoanCore.address);
+
+    const depositAmount = ethers.parseUnits("5000", 6);
+    await mockEurc.mint(lp.address, depositAmount);
+    await mockEurc.connect(lp).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+    await poolEurc.connect(lp).deposit(depositAmount, lp.address);
+
+    // drawLiquidity uses safeTransfer
+    const drawAmount = ethers.parseUnits("2000", 6);
+    await poolEurc.connect(fakeLoanCore).drawLiquidity(borrower.address, drawAmount);
+    expect(await mockEurc.balanceOf(borrower.address)).to.equal(drawAmount);
+
+    // returnLiquidity fails if borrower hasn't approved
+    await expect(
+      poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, drawAmount)
+    ).to.be.revertedWithCustomError(mockEurc, "ERC20InsufficientAllowance");
+
+    // returnLiquidity succeeds after approval
+    await mockEurc.connect(borrower).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+    await poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, drawAmount);
+    expect(await poolEurc.totalBorrows()).to.equal(0n);
+    expect(await mockEurc.balanceOf(await poolEurc.getAddress())).to.equal(depositAmount);
+  });
 });

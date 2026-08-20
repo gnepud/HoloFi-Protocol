@@ -410,4 +410,29 @@ contract HoloFiLendingPoolTest is Test {
         poolEurc.deposit(1_000 * 1e6, lp);
         assertEq(poolEurc.totalAssets(), 6_000 * 1e6);
     }
+
+    function test_M04_SafeERC20_DrawAndReturnLiquidity() public {
+        eurc.mint(lp, 10_000 * 1e6);
+        vm.prank(lp);
+        poolEurc.deposit(10_000 * 1e6, lp);
+
+        // drawLiquidity uses safeTransfer
+        vm.prank(loanCore);
+        poolEurc.drawLiquidity(borrower, 3_000 * 1e6);
+        assertEq(eurc.balanceOf(borrower), 3_000 * 1e6);
+
+        // returnLiquidity fails if borrower didn't approve (SafeERC20 reverts)
+        vm.prank(loanCore);
+        vm.expectRevert();
+        poolEurc.returnLiquidity(borrower, 3_000 * 1e6);
+
+        // returnLiquidity succeeds with safeTransferFrom after approve
+        vm.prank(borrower);
+        eurc.approve(address(poolEurc), 3_000 * 1e6);
+
+        vm.prank(loanCore);
+        poolEurc.returnLiquidity(borrower, 3_000 * 1e6);
+        assertEq(eurc.balanceOf(address(poolEurc)), 10_000 * 1e6);
+        assertEq(poolEurc.totalBorrows(), 0);
+    }
 }

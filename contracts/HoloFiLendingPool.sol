@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import { ERC4626, ERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { ICardEligibilityPolicy } from "./interfaces/ICardEligibilityPolicy.sol";
@@ -15,6 +16,8 @@ interface IHoloFiVaultLoanCore {
  * @notice Generic permissioned ERC-4626 liquidity pool issuing custom pToken share tokens against ERC-20 deposits.
  */
 contract HoloFiLendingPool is ERC4626, Pausable {
+    using SafeERC20 for IERC20;
+
     uint256 public constant BPS_DENOMINATOR = 10000;
 
     AccessControlManager public immutable acm;
@@ -164,7 +167,7 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         }
 
         totalBorrows += amount;
-        IERC20(asset()).transfer(recipient, amount);
+        IERC20(asset()).safeTransfer(recipient, amount);
         emit LiquidityDrawn(recipient, amount);
     }
 
@@ -175,7 +178,7 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         }
 
         totalBorrows = (amount >= totalBorrows) ? 0 : (totalBorrows - amount);
-        IERC20(asset()).transferFrom(payer, address(this), amount);
+        IERC20(asset()).safeTransferFrom(payer, address(this), amount);
         emit LiquidityReturned(payer, amount);
     }
 
