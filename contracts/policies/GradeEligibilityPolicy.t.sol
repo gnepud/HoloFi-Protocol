@@ -250,4 +250,28 @@ contract GradeEligibilityPolicyTest is Test {
         );
         psa10Policy.setCardTypeOverride(cardTypeId, true);
     }
+
+    function test_RegisterCardType_Admin_Success() public {
+        // admin does not have MINTER_ROLE, but has ADMIN_ROLE
+        assertFalse(acm.hasRole(acm.MINTER_ROLE(), admin));
+        assertTrue(acm.hasRole(acm.ADMIN_ROLE(), admin));
+
+        bytes32 cardTypeId = psa10Policy.computeCardTypeId(psa10Card);
+
+        vm.prank(admin);
+        (bytes32 registeredId, bool eligible) = psa10Policy.registerCardType(psa10Card);
+
+        assertEq(registeredId, cardTypeId);
+        assertTrue(eligible);
+        assertTrue(psa10Policy.isCardTypeEligible(cardTypeId));
+    }
+
+    function test_SetCardTypeOverride_Admin_Success() public {
+        bytes32 cardTypeId = psa10Policy.computeCardTypeId(psa9Card);
+        assertFalse(psa10Policy.isCardTypeEligible(cardTypeId));
+
+        vm.prank(admin);
+        psa10Policy.setCardTypeOverride(cardTypeId, true);
+        assertTrue(psa10Policy.isCardTypeEligible(cardTypeId));
+    }
 }

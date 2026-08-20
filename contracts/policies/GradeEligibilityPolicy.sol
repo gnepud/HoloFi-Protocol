@@ -20,7 +20,7 @@ contract GradeEligibilityPolicy is ICardEligibilityPolicy {
     error UnauthorizedMinter(address caller);
 
     modifier onlyMinter() {
-        if (!acm.hasRole(acm.MINTER_ROLE(), msg.sender)) {
+        if (!acm.hasRole(acm.MINTER_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedMinter(msg.sender);
         }
         _;
