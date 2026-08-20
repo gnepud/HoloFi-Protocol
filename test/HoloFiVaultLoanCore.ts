@@ -626,4 +626,44 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     await loanCore.connect(store).createVault(poolEurcAddr);
     expect(await loanCore.nextVaultId()).to.equal(2n);
   });
+
+  it("M-02: Should preserve interest accrual across high-frequency calls via time residual tracking", async function () {
+    const { loanCore, vaultCard, priceFeed, poolEurcAddr, store, minter, cardTypeId1, cardTypeId2 } =
+      await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    await loanCore.connect(store).createVault(poolEurcAddr);
+    await loanCore.connect(store).createVault(poolEurcAddr);
+    const vault1 = 1n;
+    const vault2 = 2n;
+
+    await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(vault1, [1n]);
+    await loanCore.connect(store).depositCollateral(vault2, [2n]);
+
+    await priceFeed.connect(minter).setPrice(cardTypeId1, ethers.parseUnits("10000", 18));
+    await priceFeed.connect(minter).setPrice(cardTypeId2, ethers.parseUnits("10000", 18));
+
+    const borrowAmount = ethers.parseUnits("50", 6);
+    await loanCore.connect(store).borrow(vault1, borrowAmount);
+    await loanCore.connect(store).borrow(vault2, borrowAmount);
+
+    // Call accrueInterest on vault1 60 times in 60-second intervals (total 3600s = 1 hour)
+    // Individual 60s step without fix would yield 0 interest and reset timestamp
+    for (let i = 0; i < 60; i++) {
+      await networkHelpers.time.increase(60);
+      await loanCore.accrueInterest(vault1);
+    }
+
+    // Accrue interest on vault2 once at the 1-hour mark
+    await loanCore.accrueInterest(vault2);
+
+    const v1 = await loanCore.getVault(vault1);
+    expect(v1.accumulatedInterest).to.be.gt(0n);
+
+    // Total debt including pending residual interest is within at most 1 partial batch (< 10 units)
+    const totalDebt1 = await loanCore.getTotalDebt(vault1);
+    const totalDebt2 = await loanCore.getTotalDebt(vault2);
+    const diff = totalDebt1 > totalDebt2 ? totalDebt1 - totalDebt2 : totalDebt2 - totalDebt1;
+    expect(diff).to.be.lte(10n);
+  });
 });

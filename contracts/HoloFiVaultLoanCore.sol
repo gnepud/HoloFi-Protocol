@@ -145,12 +145,23 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
 
         if (vault.principalDebt > 0) {
             uint256 borrowRate = HoloFiLendingPool(vault.lendingPool).borrowRateBpsPerYear();
-            uint256 interestNew = (vault.principalDebt * borrowRate * dt) /
-                (BPS_DENOMINATOR * SECONDS_PER_YEAR);
-            vault.accumulatedInterest += interestNew;
-            emit InterestAccrued(vaultId, interestNew, vault.accumulatedInterest, block.timestamp);
+            if (borrowRate > 0) {
+                uint256 interestNew = (vault.principalDebt * borrowRate * dt) /
+                    (BPS_DENOMINATOR * SECONDS_PER_YEAR);
+                if (interestNew > 0) {
+                    vault.accumulatedInterest += interestNew;
+                    uint256 denominator = vault.principalDebt * borrowRate;
+                    uint256 accountedDt = (interestNew * BPS_DENOMINATOR * SECONDS_PER_YEAR + denominator - 1) /
+                        denominator;
+                    vault.lastInterestUpdateTime += accountedDt;
+                    emit InterestAccrued(vaultId, interestNew, vault.accumulatedInterest, block.timestamp);
+                }
+            } else {
+                vault.lastInterestUpdateTime = block.timestamp;
+            }
+        } else {
+            vault.lastInterestUpdateTime = block.timestamp;
         }
-        vault.lastInterestUpdateTime = block.timestamp;
     }
 
     function getPendingInterest(uint256 vaultId) public view returns (uint256) {

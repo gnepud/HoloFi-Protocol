@@ -996,4 +996,66 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         loanCore.borrow(vaultId, 1_000 * 1e6);
         assertEq(loanCore.getVault(vaultId).principalDebt, 1_000 * 1e6);
     }
+
+    function test_AccrueInterest_HighFrequencyCalls_PreservesInterestViaTimeResidual() public {
+        vm.startPrank(store);
+        vaultCard.setApprovalForAll(address(loanCore), true);
+        uint256[] memory tokens1 = new uint256[](1);
+        tokens1[0] = cardId1;
+        uint256[] memory tokens2 = new uint256[](1);
+        tokens2[0] = cardId2;
+
+        uint256 vault1 = loanCore.createVault(address(pool));
+        loanCore.depositCollateral(vault1, tokens1);
+
+        uint256 vault2 = loanCore.createVault(address(pool));
+        loanCore.depositCollateral(vault2, tokens2);
+        vm.stopPrank();
+
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId2, 10_000 * 1e18);
+        eurc.mint(address(pool), 100_000 * 1e6);
+
+        // Both vaults borrow 50 EURC
+        vm.startPrank(store);
+        loanCore.borrow(vault1, 50 * 1e6);
+        loanCore.borrow(vault2, 50 * 1e6);
+        vm.stopPrank();
+
+        // Vault 1 is called every 10 seconds 360 times (1 hour total)
+        // Vault 2 has no intermediate calls
+        for (uint256 i = 0; i < 360; i++) {
+            vm.warp(block.timestamp + 10);
+            loanCore.accrueInterest(vault1);
+        }
+
+        // Accrue interest on Vault 2 once at the 1-hour mark
+        loanCore.accrueInterest(vault2);
+
+        HoloFiVaultLoanCore.CollateralVault memory v1 = loanCore.getVault(vault1);
+        HoloFiVaultLoanCore.CollateralVault memory v2 = loanCore.getVault(vault2);
+
+        // High frequency calls preserve accumulated interest
+        assertGt(v1.accumulatedInterest, 0);
+
+        // Total debt (accumulated + pending residual) is within 1 partial batch (< 10 units)
+        uint256 totalDebt1 = loanCore.getTotalDebt(vault1);
+        uint256 totalDebt2 = loanCore.getTotalDebt(vault2);
+        assertApproxEqAbs(totalDebt1, totalDebt2, 10);
+    }
+
+    function test_AccrueInterest_ZeroPrincipalOrZeroRate_UpdatesTimestamp() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault(address(pool));
+
+        uint256 t0 = block.timestamp;
+        vm.warp(t0 + 100);
+        loanCore.accrueInterest(vaultId);
+
+        HoloFiVaultLoanCore.CollateralVault memory v = loanCore.getVault(vaultId);
+        assertEq(v.lastInterestUpdateTime, t0 + 100);
+        assertEq(v.accumulatedInterest, 0);
+    }
 }
