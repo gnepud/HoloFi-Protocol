@@ -24,6 +24,7 @@ contract HoloFiLendingPool is ERC4626 {
     uint256 public liquidationThresholdBps; // Liquidation Threshold (e.g. 7000 = 70.00%)
     uint256 public liquidationPenaltyBps;   // Liquidation Penalty (e.g. 1000 = 10.00%)
     uint256 public borrowRateBpsPerYear;      // Borrow Rate APY (e.g. 500 = 5.00%)
+    uint256 public totalBorrows;              // Outstanding borrowed capital in loan core
 
     event LoanCoreUpdated(address indexed newLoanCore);
     event EligibilityPolicyUpdated(address indexed newPolicy);
@@ -117,6 +118,10 @@ contract HoloFiLendingPool is ERC4626 {
         return ICardEligibilityPolicy(eligibilityPolicy).isCardTypeEligible(cardTypeId);
     }
 
+    function totalAssets() public view virtual override returns (uint256) {
+        return super.totalAssets() + totalBorrows;
+    }
+
     function drawLiquidity(address recipient, uint256 amount) external {
         if (msg.sender != loanCore && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedLoanCore(msg.sender);
@@ -126,6 +131,7 @@ contract HoloFiLendingPool is ERC4626 {
             revert InsufficientVaultLiquidity(available, amount);
         }
 
+        totalBorrows += amount;
         IERC20(asset()).transfer(recipient, amount);
         emit LiquidityDrawn(recipient, amount);
     }
@@ -136,6 +142,7 @@ contract HoloFiLendingPool is ERC4626 {
             revert UnauthorizedLoanCore(msg.sender);
         }
 
+        totalBorrows = (amount >= totalBorrows) ? 0 : (totalBorrows - amount);
         IERC20(asset()).transferFrom(payer, address(this), amount);
         emit LiquidityReturned(payer, amount);
     }

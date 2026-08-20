@@ -296,4 +296,48 @@ contract HoloFiLendingPoolTest is Test {
         assertTrue(poolEurc.isCollateralAllowed(id10));
         assertFalse(poolEurc.isCollateralAllowed(id9));
     }
+
+    function test_C01_TotalAssets_AccountsForTotalBorrows() public {
+        // 1. Initial Deposit (mint additional EURC to lp)
+        eurc.mint(lp, 100_000 * 1e6);
+        vm.prank(lp);
+        poolEurc.deposit(100_000 * 1e6, lp);
+
+        assertEq(poolEurc.totalAssets(), 100_000 * 1e6);
+        assertEq(poolEurc.totalBorrows(), 0);
+
+        // 2. Draw 90,000 EURC
+        vm.prank(loanCore);
+        poolEurc.drawLiquidity(borrower, 90_000 * 1e6);
+
+        assertEq(poolEurc.totalBorrows(), 90_000 * 1e6);
+        assertEq(eurc.balanceOf(address(poolEurc)), 10_000 * 1e6);
+        // totalAssets must still be 100,000 EURC
+        assertEq(poolEurc.totalAssets(), 100_000 * 1e6);
+
+        // 3. Second depositor deposits 10,000 EURC during active loan
+        address secondUser = address(0x7777);
+        eurc.mint(secondUser, 10_000 * 1e6);
+        vm.startPrank(secondUser);
+        eurc.approve(address(poolEurc), type(uint256).max);
+        uint256 shares = poolEurc.deposit(10_000 * 1e6, secondUser);
+        vm.stopPrank();
+
+        // Must receive 10,000 shares (1:1), not 100,000 shares
+        assertEq(shares, 10_000 * 1e6);
+        assertEq(poolEurc.totalAssets(), 110_000 * 1e6);
+        assertEq(poolEurc.totalSupply(), 110_000 * 1e6);
+
+        // 4. Return Liquidity with interest (90,000 + 4,500 = 94,500 EURC)
+        eurc.mint(borrower, 94_500 * 1e6);
+        vm.startPrank(borrower);
+        eurc.approve(address(poolEurc), type(uint256).max);
+        vm.stopPrank();
+
+        vm.prank(loanCore);
+        poolEurc.returnLiquidity(borrower, 94_500 * 1e6);
+
+        assertEq(poolEurc.totalBorrows(), 0);
+        assertEq(poolEurc.totalAssets(), 114_500 * 1e6);
+    }
 }

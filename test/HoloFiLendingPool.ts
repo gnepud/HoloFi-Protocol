@@ -217,4 +217,64 @@ describe("HoloFiLendingPool Integration Tests", function () {
     // Unregistered card is not eligible
     expect(await poolEurc.isCollateralAllowed(cardTypeId)).to.be.false;
   });
+
+  it("Should maintain stable totalAssets and share price when liquidity is drawn and returned (C-01 fix)", async function () {
+    const { mockEurc, poolEurc, admin, lp, borrower, fakeLoanCore, unauthorized } = await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    await poolEurc.connect(admin).setLoanCore(fakeLoanCore.address);
+
+    // 1. LP deposits 100,000 EURC
+    const initialDeposit = ethers.parseUnits("100000", 6);
+    await mockEurc.mint(lp.address, initialDeposit);
+    await mockEurc.connect(lp).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+    await poolEurc.connect(lp).deposit(initialDeposit, lp.address);
+
+    expect(await poolEurc.totalAssets()).to.equal(initialDeposit);
+    expect(await poolEurc.totalSupply()).to.equal(initialDeposit);
+    expect(await poolEurc.totalBorrows()).to.equal(0n);
+
+    // 2. Borrower borrows 90,000 EURC through loanCore
+    const borrowAmount = ethers.parseUnits("90000", 6);
+    await poolEurc.connect(fakeLoanCore).drawLiquidity(borrower.address, borrowAmount);
+
+    expect(await poolEurc.totalBorrows()).to.equal(borrowAmount);
+    expect(await mockEurc.balanceOf(await poolEurc.getAddress())).to.equal(ethers.parseUnits("10000", 6));
+    // totalAssets MUST remain 100,000 EURC (10,000 cash + 90,000 totalBorrows)
+    expect(await poolEurc.totalAssets()).to.equal(initialDeposit);
+
+    // 3. A second user deposits 10,000 EURC while loan is active
+    const secondUserDeposit = ethers.parseUnits("10000", 6);
+    await mockEurc.mint(unauthorized.address, secondUserDeposit);
+    await mockEurc.connect(unauthorized).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+
+    // convertToShares must evaluate to 10,000 shares (1:1), NOT 100,000 shares
+    expect(await poolEurc.convertToShares(secondUserDeposit)).to.equal(secondUserDeposit);
+    await poolEurc.connect(unauthorized).deposit(secondUserDeposit, unauthorized.address);
+
+    expect(await poolEurc.balanceOf(unauthorized.address)).to.equal(secondUserDeposit);
+    expect(await poolEurc.totalAssets()).to.equal(ethers.parseUnits("110000", 6));
+    expect(await poolEurc.totalSupply()).to.equal(ethers.parseUnits("110000", 6));
+
+    // 4. Borrower repays 90,000 principal + 4,500 interest = 94,500 EURC
+    const repaymentAmount = ethers.parseUnits("94500", 6);
+    await mockEurc.mint(borrower.address, repaymentAmount);
+    await mockEurc.connect(borrower).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+
+    await poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, repaymentAmount);
+
+    expect(await poolEurc.totalBorrows()).to.equal(0n);
+    expect(await poolEurc.totalAssets()).to.equal(ethers.parseUnits("114500", 6));
+
+    // 5. LP and second user can redeem fair proportional share of capital and yield
+    const lpShares = await poolEurc.balanceOf(lp.address);
+    const lpAssets = await poolEurc.previewRedeem(lpShares);
+    // LP gets ~104,090.9 EURC (retains 100k principal + earns proportional yield)
+    expect(lpAssets).to.be.gt(initialDeposit);
+
+    const secondUserShares = await poolEurc.balanceOf(unauthorized.address);
+    const secondUserAssets = await poolEurc.previewRedeem(secondUserShares);
+    // Second user gets ~10,409.09 EURC (retains 10k principal + earns proportional yield, no abnormal profit)
+    expect(secondUserAssets).to.be.gt(secondUserDeposit);
+    expect(secondUserAssets).to.be.lt(ethers.parseUnits("11000", 6));
+  });
 });
