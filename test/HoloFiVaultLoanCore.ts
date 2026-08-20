@@ -22,12 +22,12 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     ]);
 
     const minterRole = await acm.MINTER_ROLE();
-    const adminRole = await acm.ADMIN_ROLE();
+    const lockerRole = await acm.LOCKER_ROLE();
     const oracleRole = await acm.ORACLE_ROLE();
 
     await acm.connect(admin).grantRole(minterRole, minter.address);
     await acm.connect(admin).grantRole(oracleRole, minter.address);
-    await acm.connect(admin).grantRole(adminRole, await loanCore.getAddress());
+    await acm.connect(admin).grantRole(lockerRole, await loanCore.getAddress());
     await acm.connect(admin).setKybStatus(store.address, true);
 
     const cardTypeId1 = ethers.keccak256(ethers.toUtf8Bytes("CardType1"));

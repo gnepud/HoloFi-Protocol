@@ -67,6 +67,27 @@ describe("HoloFiVaultCard Integration Tests", function () {
     expect(card.isLocked).to.be.true;
   });
 
+  it("Should allow account with LOCKER_ROLE to update card lock status", async function () {
+    const { acm, vaultCard, admin, minter, user, unauthorized } = await networkHelpers.loadFixture(deployVaultCardFixture);
+    const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));
+    const attestationHash = ethers.keccak256(ethers.toUtf8Bytes("Blink:Cert"));
+
+    const lockerRole = await acm.LOCKER_ROLE();
+    await acm.connect(admin).grantRole(lockerRole, unauthorized.address);
+
+    await vaultCard.connect(minter).mintCard(user.address, cardTypeId, attestationHash, "ipfs://QmURI");
+
+    await expect(vaultCard.connect(unauthorized).setCardLock(1n, true))
+      .to.emit(vaultCard, "CardLockUpdated")
+      .withArgs(1n, true);
+
+    const card = await vaultCard.getCard(1n);
+    expect(card.isLocked).to.be.true;
+
+    await vaultCard.connect(unauthorized).setCardLock(1n, false);
+    expect((await vaultCard.getCard(1n)).isLocked).to.be.false;
+  });
+
   it("Should revert when unauthorized user attempts to mint", async function () {
     const { vaultCard, unauthorized, user } = await networkHelpers.loadFixture(deployVaultCardFixture);
     const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));

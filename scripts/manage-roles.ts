@@ -15,6 +15,7 @@ export const KNOWN_ROLES: RoleDefinition[] = [
   { name: "MINTER_ROLE", hash: ethers.id("MINTER_ROLE") },
   { name: "KYB_MANAGER_ROLE", hash: ethers.id("KYB_MANAGER_ROLE") },
   { name: "PAUSER_ROLE", hash: ethers.id("PAUSER_ROLE") },
+  { name: "LOCKER_ROLE", hash: ethers.id("LOCKER_ROLE") },
 ];
 
 export const ACM_ABI = [
@@ -30,6 +31,7 @@ export const ACM_ABI = [
   "function KYB_MANAGER_ROLE() external view returns (bytes32)",
   "function PAUSER_ROLE() external view returns (bytes32)",
   "function MINTER_ROLE() external view returns (bytes32)",
+  "function LOCKER_ROLE() external view returns (bytes32)",
   "event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)",
   "event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)",
   "event KybStatusUpdated(address indexed account, bool status, address indexed operator)",
@@ -96,9 +98,12 @@ export function resolveRoleHash(roleInput: string): string {
     case "PAUSER_ROLE":
     case "PAUSER":
       return ethers.id("PAUSER_ROLE");
+    case "LOCKER_ROLE":
+    case "LOCKER":
+      return ethers.id("LOCKER_ROLE");
     default:
       throw new Error(
-        `Unknown role "${roleInput}". Supported roles: DEFAULT_ADMIN_ROLE, ADMIN_ROLE, ORACLE_ROLE, MINTER_ROLE, KYB_MANAGER_ROLE, PAUSER_ROLE, or a 32-byte hex string.`
+        `Unknown role "${roleInput}". Supported roles: DEFAULT_ADMIN_ROLE, ADMIN_ROLE, ORACLE_ROLE, MINTER_ROLE, KYB_MANAGER_ROLE, PAUSER_ROLE, LOCKER_ROLE, or a 32-byte hex string.`
       );
   }
 }

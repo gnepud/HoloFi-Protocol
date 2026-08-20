@@ -42,11 +42,11 @@ const DeployHoloFiProtocol = buildModule("DeployHoloFiProtocol", (m) => {
   m.call(dutchAuction, "setTreasury", [treasury]);
 
   // Role Assignments via ACM
-  const ADMIN_ROLE = m.staticCall(acm, "ADMIN_ROLE");
+  const LOCKER_ROLE = m.staticCall(acm, "LOCKER_ROLE");
   const ORACLE_ROLE = m.staticCall(acm, "ORACLE_ROLE");
   const MINTER_ROLE = m.staticCall(acm, "MINTER_ROLE");
 
-  m.call(acm, "grantRole", [ADMIN_ROLE, loanCore], { id: "grantRole_loanCoreAdmin" });
+  m.call(acm, "grantRole", [LOCKER_ROLE, loanCore], { id: "grantRole_loanCoreLocker" });
   m.call(acm, "grantRole", [ORACLE_ROLE, oracleFeeder], { id: "grantRole_oracleFeeder" });
   m.call(acm, "grantRole", [MINTER_ROLE, minter], { id: "grantRole_minter" });
 

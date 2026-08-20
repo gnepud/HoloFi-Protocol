@@ -222,6 +222,7 @@ describe("ManageRoles CLI Script Integration Tests", function () {
       expect(resolveRoleHash("MINTER_ROLE")).to.equal(ethersLib.id("MINTER_ROLE"));
       expect(resolveRoleHash("KYB_MANAGER_ROLE")).to.equal(ethersLib.id("KYB_MANAGER_ROLE"));
       expect(resolveRoleHash("PAUSER_ROLE")).to.equal(ethersLib.id("PAUSER_ROLE"));
+      expect(resolveRoleHash("LOCKER_ROLE")).to.equal(ethersLib.id("LOCKER_ROLE"));
     });
 
     it("Should resolve aliases in various cases", function () {
@@ -236,6 +237,7 @@ describe("ManageRoles CLI Script Integration Tests", function () {
       expect(resolveRoleHash("kyb")).to.equal(ethersLib.id("KYB_MANAGER_ROLE"));
       expect(resolveRoleHash("kyb_manager")).to.equal(ethersLib.id("KYB_MANAGER_ROLE"));
       expect(resolveRoleHash("pauser")).to.equal(ethersLib.id("PAUSER_ROLE"));
+      expect(resolveRoleHash("locker")).to.equal(ethersLib.id("LOCKER_ROLE"));
     });
 
     it("Should resolve raw 32-byte hex hash string", function () {
@@ -254,6 +256,7 @@ describe("ManageRoles CLI Script Integration Tests", function () {
       expect(getRoleNameFromHash(ethersLib.id("MINTER_ROLE"))).to.equal("MINTER_ROLE");
       expect(getRoleNameFromHash(ethersLib.id("KYB_MANAGER_ROLE"))).to.equal("KYB_MANAGER_ROLE");
       expect(getRoleNameFromHash(ethersLib.id("PAUSER_ROLE"))).to.equal("PAUSER_ROLE");
+      expect(getRoleNameFromHash(ethersLib.id("LOCKER_ROLE"))).to.equal("LOCKER_ROLE");
 
       const unknownHash = "0x9999999999999999999999999999999999999999999999999999999999999999";
       expect(getRoleNameFromHash(unknownHash)).to.equal(unknownHash);

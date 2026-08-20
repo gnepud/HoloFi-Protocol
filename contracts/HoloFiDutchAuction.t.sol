@@ -63,7 +63,7 @@ contract HoloFiDutchAuctionTest is Test {
         vm.startPrank(admin);
         acm.grantRole(acm.MINTER_ROLE(), minter);
         acm.grantRole(acm.ORACLE_ROLE(), oracle);
-        acm.grantRole(acm.ADMIN_ROLE(), address(loanCore));
+        acm.grantRole(acm.LOCKER_ROLE(), address(loanCore));
         acm.setKybStatus(store, true);
         loanCore.setDutchAuction(address(dutchAuction));
 

@@ -13,6 +13,7 @@ contract AccessControlManager is AccessControl {
     bytes32 public constant KYB_MANAGER_ROLE = keccak256("KYB_MANAGER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant LOCKER_ROLE = keccak256("LOCKER_ROLE");
 
     error ZeroAddressAdmin();
     error ZeroAddressKybAccount();
@@ -42,6 +43,7 @@ contract AccessControlManager is AccessControl {
         _setRoleAdmin(KYB_MANAGER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(MINTER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(LOCKER_ROLE, ADMIN_ROLE);
     }
 
     function setKybStatus(address account, bool status) external onlyKybManagerOrAdmin {

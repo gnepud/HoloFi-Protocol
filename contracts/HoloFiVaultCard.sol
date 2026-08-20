@@ -102,7 +102,7 @@ contract HoloFiVaultCard is ERC721URIStorage {
         if (_ownerOf(tokenId) == address(0)) {
             revert TokenDoesNotExist(tokenId);
         }
-        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+        if (!acm.hasRole(acm.LOCKER_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedLockOperator(msg.sender);
         }
 

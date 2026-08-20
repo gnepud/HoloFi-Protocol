@@ -72,6 +72,24 @@ contract HoloFiVaultCardTest is Test {
         assertTrue(vaultCard.getCard(tokenId).isLocked);
     }
 
+    function test_SetCardLock_ByLockerRole_Success() public {
+        address locker = address(0x9999);
+        bytes32 lockerRole = acm.LOCKER_ROLE();
+        vm.prank(admin);
+        acm.grantRole(lockerRole, locker);
+
+        vm.prank(minter);
+        uint256 tokenId = vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash");
+
+        vm.prank(locker);
+        vaultCard.setCardLock(tokenId, true);
+        assertTrue(vaultCard.getCard(tokenId).isLocked);
+
+        vm.prank(locker);
+        vaultCard.setCardLock(tokenId, false);
+        assertFalse(vaultCard.getCard(tokenId).isLocked);
+    }
+
     function test_RevertIf_UnauthorizedLockOperator() public {
         vm.prank(minter);
         uint256 tokenId = vaultCard.mintCard(user, TEST_CARD_TYPE_ID, TEST_ATTESTATION, "ipfs://QmTestHash");

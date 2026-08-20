@@ -54,10 +54,12 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
 
     // Verify role authorizations via ACM
     const ADMIN_ROLE = await acm.ADMIN_ROLE();
+    const LOCKER_ROLE = await acm.LOCKER_ROLE();
     const ORACLE_ROLE = await acm.ORACLE_ROLE();
     const MINTER_ROLE = await acm.MINTER_ROLE();
 
-    expect(await acm.hasRole(ADMIN_ROLE, loanCoreAddr)).to.be.true;
+    expect(await acm.hasRole(LOCKER_ROLE, loanCoreAddr)).to.be.true;
+    expect(await acm.hasRole(ADMIN_ROLE, loanCoreAddr)).to.be.false;
     expect(await acm.hasRole(ORACLE_ROLE, oracleFeeder.address)).to.be.true;
     expect(await acm.hasRole(MINTER_ROLE, minter.address)).to.be.true;
   });

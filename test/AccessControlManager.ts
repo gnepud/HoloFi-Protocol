@@ -26,6 +26,13 @@ describe("AccessControlManager Integration Tests", function () {
     expect(await acm.hasRole(minterRole, user.address)).to.be.true;
   });
 
+  it("Should configure LOCKER_ROLE correctly under ADMIN_ROLE", async function () {
+    const { acm, admin, user } = await networkHelpers.loadFixture(deployAcmFixture);
+    const lockerRole = await acm.LOCKER_ROLE();
+    await acm.connect(admin).grantRole(lockerRole, user.address);
+    expect(await acm.hasRole(lockerRole, user.address)).to.be.true;
+  });
+
   it("Should revert if deployed with zero address admin", async function () {
     await expect(
       ethers.deployContract("AccessControlManager", [ethers.ZeroAddress])

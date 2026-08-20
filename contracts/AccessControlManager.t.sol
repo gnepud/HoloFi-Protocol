@@ -41,10 +41,12 @@ contract AccessControlManagerTest is Test {
         assertEq(acm.getRoleAdmin(oracleRole), adminRole);
         assertEq(acm.getRoleAdmin(kybManagerRole), adminRole);
         assertEq(acm.getRoleAdmin(pauserRole), adminRole);
+        assertEq(acm.getRoleAdmin(acm.LOCKER_ROLE()), adminRole);
     }
 
     function test_MinterRoleHierarchy() public view {
         assertEq(acm.getRoleAdmin(acm.MINTER_ROLE()), acm.ADMIN_ROLE());
+        assertEq(acm.getRoleAdmin(acm.LOCKER_ROLE()), acm.ADMIN_ROLE());
     }
 
     function test_GrantAndRevokeRolesByAdmin() public {
