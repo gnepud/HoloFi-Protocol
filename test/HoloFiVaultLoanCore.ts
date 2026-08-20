@@ -587,4 +587,43 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       attacker.withdrawCollateral(1n, [attackCard1])
     ).to.be.revertedWithCustomError(loanCore, "ReentrancyGuardReentrantCall");
   });
+
+  it("H-04: Should enforce Pausable access control and pause sensitive operations in LoanCore", async function () {
+    const { loanCore, acm, poolEurc, store, admin, unauthorized } =
+      await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    const poolEurcAddr = await poolEurc.getAddress();
+    const pauserRole = await acm.PAUSER_ROLE();
+    const pauser = unauthorized;
+
+    // Unauthorized cannot pause
+    await expect(
+      loanCore.connect(pauser).pause()
+    ).to.be.revertedWithCustomError(loanCore, "UnauthorizedPauser").withArgs(pauser.address);
+
+    // Grant PAUSER_ROLE to pauser
+    await acm.connect(admin).grantRole(pauserRole, pauser.address);
+
+    // Pauser can pause
+    await loanCore.connect(pauser).pause();
+    expect(await loanCore.paused()).to.be.true;
+
+    // Pauser cannot unpause (only admin)
+    await expect(
+      loanCore.connect(pauser).unpause()
+    ).to.be.revertedWithCustomError(loanCore, "UnauthorizedAdmin").withArgs(pauser.address);
+
+    // Operations revert while paused with EnforcedPause
+    await expect(
+      loanCore.connect(store).createVault(poolEurcAddr)
+    ).to.be.revertedWithCustomError(loanCore, "EnforcedPause");
+
+    // Admin unpauses
+    await loanCore.connect(admin).unpause();
+    expect(await loanCore.paused()).to.be.false;
+
+    // Operation succeeds after unpause
+    await loanCore.connect(store).createVault(poolEurcAddr);
+    expect(await loanCore.nextVaultId()).to.equal(2n);
+  });
 });

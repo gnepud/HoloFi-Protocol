@@ -277,4 +277,45 @@ describe("HoloFiLendingPool Integration Tests", function () {
     expect(secondUserAssets).to.be.gt(secondUserDeposit);
     expect(secondUserAssets).to.be.lt(ethers.parseUnits("11000", 6));
   });
+
+  it("H-04: Should enforce Pausable access control and pause ERC-4626 operations in LendingPool", async function () {
+    const { mockEurc, poolEurc, admin, lp, unauthorized, acm } = await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    const pauserRole = await acm.PAUSER_ROLE();
+    const pauser = unauthorized;
+
+    // Unauthorized cannot pause
+    await expect(
+      poolEurc.connect(pauser).pause()
+    ).to.be.revertedWithCustomError(poolEurc, "UnauthorizedPauser").withArgs(pauser.address);
+
+    // Grant PAUSER_ROLE
+    await acm.connect(admin).grantRole(pauserRole, pauser.address);
+
+    // Pauser can pause
+    await poolEurc.connect(pauser).pause();
+    expect(await poolEurc.paused()).to.be.true;
+
+    // Pauser cannot unpause (only admin)
+    await expect(
+      poolEurc.connect(pauser).unpause()
+    ).to.be.revertedWithCustomError(poolEurc, "UnauthorizedAdmin").withArgs(pauser.address);
+
+    // Deposit reverts when paused
+    const amount = ethers.parseUnits("1000", 6);
+    await mockEurc.mint(lp.address, amount);
+    await mockEurc.connect(lp).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+
+    await expect(
+      poolEurc.connect(lp).deposit(amount, lp.address)
+    ).to.be.revertedWithCustomError(poolEurc, "EnforcedPause");
+
+    // Admin unpauses
+    await poolEurc.connect(admin).unpause();
+    expect(await poolEurc.paused()).to.be.false;
+
+    // Deposit succeeds after unpause
+    await poolEurc.connect(lp).deposit(amount, lp.address);
+    expect(await poolEurc.totalAssets()).to.equal(amount);
+  });
 });

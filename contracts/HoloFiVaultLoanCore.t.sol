@@ -265,7 +265,6 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
     function test_GetHealthFactor_AboveAndBelowOne() public {
         vm.prank(store);
         uint256 vaultId = loanCore.createVault(address(pool));
-        uint256 fmv = 10_000 * 1e6;
 
         vm.prank(store);
         vaultCard.setApprovalForAll(address(loanCore), true);
@@ -905,5 +904,96 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         vm.prank(address(attacker));
         vm.expectRevert(); // ReentrancyGuardReentrantCall()
         loanCore.withdrawCollateral(attackerVaultId, withdrawTokens);
+    }
+
+    function test_H04_Pausable_LoanCore_AccessControl() public {
+        address pauser = address(0x7777);
+        bytes32 pauserRole = acm.PAUSER_ROLE();
+        vm.prank(admin);
+        acm.grantRole(pauserRole, pauser);
+
+        // Unauthorized user cannot pause
+        address rando = address(0x8888);
+        vm.prank(rando);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.UnauthorizedPauser.selector, rando));
+        loanCore.pause();
+
+        // Pauser role can pause
+        vm.prank(pauser);
+        loanCore.pause();
+        assertTrue(loanCore.paused());
+
+        // Pauser role cannot unpause (only ADMIN_ROLE)
+        vm.prank(pauser);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.UnauthorizedAdmin.selector, pauser));
+        loanCore.unpause();
+
+        // Admin can unpause
+        vm.prank(admin);
+        loanCore.unpause();
+        assertFalse(loanCore.paused());
+    }
+
+    function test_H04_Pausable_LoanCore_WhenPausedReverts() public {
+        vm.prank(admin);
+        loanCore.pause();
+
+        // createVault reverts when paused
+        vm.prank(store);
+        vm.expectRevert();
+        loanCore.createVault(address(pool));
+
+        // Unpause to set up vault
+        vm.prank(admin);
+        loanCore.unpause();
+
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault(address(pool));
+
+        // Re-pause
+        vm.prank(admin);
+        loanCore.pause();
+
+        // depositCollateral reverts when paused
+        uint256[] memory tokens = new uint256[](1);
+        tokens[0] = cardId1;
+        vm.prank(store);
+        vm.expectRevert();
+        loanCore.depositCollateral(vaultId, tokens);
+
+        // Unpause, deposit, borrow setup
+        vm.prank(admin);
+        loanCore.unpause();
+
+        vm.startPrank(store);
+        vaultCard.setApprovalForAll(address(loanCore), true);
+        loanCore.depositCollateral(vaultId, tokens);
+        vm.stopPrank();
+
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 20_000 * 1e18);
+        eurc.mint(address(pool), 100_000 * 1e6);
+
+        // Re-pause
+        vm.prank(admin);
+        loanCore.pause();
+
+        // borrow reverts when paused
+        vm.prank(store);
+        vm.expectRevert();
+        loanCore.borrow(vaultId, 1_000 * 1e6);
+
+        // withdrawCollateral reverts when paused
+        vm.prank(store);
+        vm.expectRevert();
+        loanCore.withdrawCollateral(vaultId, tokens);
+
+        // Unpause -> operations succeed
+        vm.prank(admin);
+        loanCore.unpause();
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 1_000 * 1e6);
+        assertEq(loanCore.getVault(vaultId).principalDebt, 1_000 * 1e6);
     }
 }

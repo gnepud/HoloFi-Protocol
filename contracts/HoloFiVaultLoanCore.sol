@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { DecimalMath } from "./libraries/DecimalMath.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiVaultCard } from "./HoloFiVaultCard.sol";
@@ -14,7 +15,7 @@ import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
  * @title HoloFiVaultLoanCore
  * @notice Core credit manager and collateral escrow contract for HoloFi protocol.
  */
-contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
+contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
     enum VaultStatus { Active, Liquidating, Closed }
 
     struct CollateralVault {
@@ -85,6 +86,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
     error TokenAlreadyInVault(uint256 tokenId, uint256 existingVaultId);
     error TokenNotInVault(uint256 tokenId, uint256 vaultId);
     error UnauthorizedAdmin(address caller);
+    error UnauthorizedPauser(address caller);
     error ZeroBorrowAmount();
     error ExceedsMaxBorrowCapacity(uint256 vaultId, uint256 requestedTotalDebt, uint256 maxBorrowCapacity);
     error ZeroRepayAmount();
@@ -112,6 +114,20 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
         vaultCard = HoloFiVaultCard(_vaultCard);
         poolFactory = HoloFiLendingPoolFactory(_poolFactory);
         priceFeed = HoloFiCardPriceFeed(_priceFeed);
+    }
+
+    function pause() external {
+        if (!acm.hasRole(acm.PAUSER_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedPauser(msg.sender);
+        }
+        _pause();
+    }
+
+    function unpause() external {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedAdmin(msg.sender);
+        }
+        _unpause();
     }
 
     function setDutchAuction(address _dutchAuction) external {
@@ -180,7 +196,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
         return IERC721Receiver.onERC721Received.selector;
     }
 
-    function createVault(address lendingPool) external returns (uint256 vaultId) {
+    function createVault(address lendingPool) external whenNotPaused returns (uint256 vaultId) {
         if (!acm.isKybApproved(msg.sender)) {
             revert KybRequired(msg.sender);
         }
@@ -203,7 +219,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
         emit VaultCreated(vaultId, msg.sender, lendingPool);
     }
 
-    function depositCollateral(uint256 vaultId, uint256[] calldata tokenIds) external nonReentrant {
+    function depositCollateral(uint256 vaultId, uint256[] calldata tokenIds) external nonReentrant whenNotPaused {
         CollateralVault storage vault = vaults[vaultId];
         if (vault.owner != msg.sender) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
@@ -239,7 +255,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
         emit CollateralDeposited(vaultId, msg.sender, tokenIds);
     }
 
-    function _withdrawCollateral(uint256 vaultId, uint256[] calldata tokenIds) internal {
+    function _withdrawCollateral(uint256 vaultId, uint256[] calldata tokenIds) internal whenNotPaused {
         CollateralVault storage vault = vaults[vaultId];
         if (vault.owner != msg.sender) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
@@ -374,7 +390,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
         }
     }
 
-    function borrow(uint256 vaultId, uint256 amount) external nonReentrant {
+    function borrow(uint256 vaultId, uint256 amount) external nonReentrant whenNotPaused {
         CollateralVault storage vault = vaults[vaultId];
         if (msg.sender != vault.owner) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
@@ -403,7 +419,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
         emit BorrowExecuted(vaultId, vault.owner, vault.lendingPool, amount, vault.principalDebt);
     }
 
-    function startLiquidation(uint256 vaultId) external nonReentrant {
+    function startLiquidation(uint256 vaultId) external nonReentrant whenNotPaused {
         if (msg.sender != dutchAuction) {
             revert UnauthorizedAuction(msg.sender);
         }
@@ -425,7 +441,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
         emit VaultLiquidationStarted(vaultId);
     }
 
-    function finalizeLiquidation(uint256 vaultId, address liquidator) external nonReentrant {
+    function finalizeLiquidation(uint256 vaultId, address liquidator) external nonReentrant whenNotPaused {
         if (msg.sender != dutchAuction) {
             revert UnauthorizedAuction(msg.sender);
         }

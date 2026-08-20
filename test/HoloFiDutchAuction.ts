@@ -208,4 +208,72 @@ describe("HoloFiDutchAuction Integration Tests", function () {
     expect(vaultInfo.principalDebt).to.equal(0n);
   });
 
+  it("H-04: Should enforce Pausable access control and pause DutchAuction operations", async function () {
+    const { dutchAuction, acm, admin, unauthorized, liquidator, store, loanCore, priceFeed, minter, cardTypeId1, cardTypeId2, poolFactory, vaultCard } =
+      await networkHelpers.loadFixture(deployDutchAuctionFixture);
+
+    const asset = await ethers.deployContract("MockERC20", ["Euro Coin", "EURC", 6]);
+    await poolFactory.connect(admin).createPool(
+      await asset.getAddress(),
+      "Pool EURC",
+      "pEURC",
+      5000n,
+      7000n,
+      1000n,
+      500n
+    );
+    const poolAddr = await poolFactory.getPool(await asset.getAddress());
+    const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
+    await pool.connect(admin).setLoanCore(await loanCore.getAddress());
+    await asset.mint(poolAddr, ethers.parseUnits("100000", 6));
+
+    await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).createVault(poolAddr);
+    await loanCore.connect(store).depositCollateral(1n, [1n, 2n]);
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
+    );
+
+    const pauserRole = await acm.PAUSER_ROLE();
+    const pauser = unauthorized;
+
+    // Unauthorized cannot pause
+    await expect(
+      dutchAuction.connect(pauser).pause()
+    ).to.be.revertedWithCustomError(dutchAuction, "UnauthorizedPauser").withArgs(pauser.address);
+
+    // Grant PAUSER_ROLE
+    await acm.connect(admin).grantRole(pauserRole, pauser.address);
+
+    // Pauser can pause
+    await dutchAuction.connect(pauser).pause();
+    expect(await dutchAuction.paused()).to.be.true;
+
+    // Pauser cannot unpause (only admin)
+    await expect(
+      dutchAuction.connect(pauser).unpause()
+    ).to.be.revertedWithCustomError(dutchAuction, "UnauthorizedAdmin").withArgs(pauser.address);
+
+    // Borrow and trigger liquidation conditions
+    await loanCore.connect(store).borrow(1n, ethers.parseUnits("4000", 6));
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
+      [ethers.parseUnits("1000", 18), ethers.parseUnits("4000", 18)]
+    );
+
+    // startAuction reverts when paused
+    await expect(
+      dutchAuction.connect(liquidator).startAuction(1n)
+    ).to.be.revertedWithCustomError(dutchAuction, "EnforcedPause");
+
+    // Admin unpauses
+    await dutchAuction.connect(admin).unpause();
+    expect(await dutchAuction.paused()).to.be.false;
+
+    // startAuction succeeds after unpause
+    await dutchAuction.connect(liquidator).startAuction(1n);
+    const auction = await dutchAuction.getAuction(1n);
+    expect(auction.vaultId).to.equal(1n);
+  });
 });

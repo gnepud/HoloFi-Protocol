@@ -4,13 +4,14 @@ pragma solidity ^0.8.28;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { DecimalMath } from "./libraries/DecimalMath.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiVaultLoanCore } from "./HoloFiVaultLoanCore.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 
-contract HoloFiDutchAuction is ReentrancyGuard {
+contract HoloFiDutchAuction is ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     struct Auction {
@@ -72,6 +73,7 @@ contract HoloFiDutchAuction is ReentrancyGuard {
     error UnregisteredLendingPool(address pool);
     error InsufficientAuctionPrice(uint256 currentPrice, uint256 reservePrice);
     error UnauthorizedAdmin(address caller);
+    error UnauthorizedPauser(address caller);
     error ZeroAddressTreasury();
     error UnauthorizedTreasury(address caller);
     error AuctionNotExpired(uint256 vaultId, uint256 currentTime, uint256 expiryTime);
@@ -86,7 +88,21 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         poolFactory = HoloFiLendingPoolFactory(_poolFactory);
     }
 
-    function startAuction(uint256 vaultId) external {
+    function pause() external {
+        if (!acm.hasRole(acm.PAUSER_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedPauser(msg.sender);
+        }
+        _pause();
+    }
+
+    function unpause() external {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedAdmin(msg.sender);
+        }
+        _unpause();
+    }
+
+    function startAuction(uint256 vaultId) external whenNotPaused {
         Auction storage auction = auctions[vaultId];
         if (auction.startTime != 0 && !auction.isSettled) {
             revert AuctionAlreadyStarted(vaultId);
@@ -141,7 +157,7 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         return auction.startPrice - priceDrop;
     }
 
-    function settleAuction(uint256 vaultId) external nonReentrant {
+    function settleAuction(uint256 vaultId) external nonReentrant whenNotPaused {
         Auction storage auction = auctions[vaultId];
         if (auction.startTime == 0 || auction.isSettled) {
             revert AuctionNotActive(vaultId);
@@ -198,7 +214,7 @@ contract HoloFiDutchAuction is ReentrancyGuard {
         emit TreasuryUpdated(_treasury);
     }
 
-    function treasuryBuyback(uint256 vaultId) external nonReentrant {
+    function treasuryBuyback(uint256 vaultId) external nonReentrant whenNotPaused {
         if (msg.sender != treasury) {
             revert UnauthorizedTreasury(msg.sender);
         }

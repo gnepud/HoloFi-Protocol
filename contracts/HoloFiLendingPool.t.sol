@@ -340,4 +340,74 @@ contract HoloFiLendingPoolTest is Test {
         assertEq(poolEurc.totalBorrows(), 0);
         assertEq(poolEurc.totalAssets(), 114_500 * 1e6);
     }
+
+    function test_H04_Pausable_LendingPool_AccessControl() public {
+        address pauser = address(0x8888);
+        bytes32 pauserRole = acm.PAUSER_ROLE();
+        vm.prank(admin);
+        acm.grantRole(pauserRole, pauser);
+
+        // Unauthorized user cannot pause
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.UnauthorizedPauser.selector, unauthorized));
+        poolEurc.pause();
+
+        // Pauser can pause
+        vm.prank(pauser);
+        poolEurc.pause();
+        assertTrue(poolEurc.paused());
+
+        // Pauser cannot unpause (only admin)
+        vm.prank(pauser);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.UnauthorizedAdmin.selector, pauser));
+        poolEurc.unpause();
+
+        // Admin can unpause
+        vm.prank(admin);
+        poolEurc.unpause();
+        assertFalse(poolEurc.paused());
+    }
+
+    function test_H04_Pausable_LendingPool_WhenPausedReverts() public {
+        eurc.mint(lp, 10_000 * 1e6);
+        vm.prank(lp);
+        poolEurc.deposit(5_000 * 1e6, lp);
+
+        vm.prank(admin);
+        poolEurc.pause();
+
+        // deposit reverts when paused
+        vm.prank(lp);
+        vm.expectRevert();
+        poolEurc.deposit(1_000 * 1e6, lp);
+
+        // mint reverts when paused
+        vm.prank(lp);
+        vm.expectRevert();
+        poolEurc.mint(1_000 * 1e6, lp);
+
+        // withdraw reverts when paused
+        vm.prank(lp);
+        vm.expectRevert();
+        poolEurc.withdraw(1_000 * 1e6, lp, lp);
+
+        // redeem reverts when paused
+        vm.prank(lp);
+        vm.expectRevert();
+        poolEurc.redeem(1_000 * 1e6, lp, lp);
+
+        // drawLiquidity reverts when paused
+        vm.prank(loanCore);
+        vm.expectRevert();
+        poolEurc.drawLiquidity(borrower, 1_000 * 1e6);
+
+        // Admin unpauses
+        vm.prank(admin);
+        poolEurc.unpause();
+
+        // Operations succeed after unpause
+        vm.prank(lp);
+        poolEurc.deposit(1_000 * 1e6, lp);
+        assertEq(poolEurc.totalAssets(), 6_000 * 1e6);
+    }
 }

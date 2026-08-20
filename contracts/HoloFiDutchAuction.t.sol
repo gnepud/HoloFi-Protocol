@@ -577,5 +577,87 @@ contract HoloFiDutchAuctionTest is Test {
         assertEq(uint256(loanCore.getVault(vaultId).status), uint256(HoloFiVaultLoanCore.VaultStatus.Closed));
         assertEq(loanCore.getVault(vaultId).principalDebt, 0);
     }
+
+    function test_H04_Pausable_DutchAuction_AccessControl() public {
+        address pauser = address(0x8888);
+        bytes32 pauserRole = acm.PAUSER_ROLE();
+        vm.prank(admin);
+        acm.grantRole(pauserRole, pauser);
+
+        address rando = address(0x9999);
+        vm.prank(rando);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiDutchAuction.UnauthorizedPauser.selector, rando));
+        dutchAuction.pause();
+
+        vm.prank(pauser);
+        dutchAuction.pause();
+        assertTrue(dutchAuction.paused());
+
+        vm.prank(pauser);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiDutchAuction.UnauthorizedAdmin.selector, pauser));
+        dutchAuction.unpause();
+
+        vm.prank(admin);
+        dutchAuction.unpause();
+        assertFalse(dutchAuction.paused());
+    }
+
+    function test_H04_Pausable_DutchAuction_WhenPausedReverts() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault(address(pool));
+
+        vm.prank(store);
+        vaultCard.setApprovalForAll(address(loanCore), true);
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = cardId1;
+
+        vm.prank(store);
+        loanCore.depositCollateral(vaultId, tokenIds);
+
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
+        eurc.mint(address(pool), 100_000 * 1e6);
+
+        vm.prank(store);
+        loanCore.borrow(vaultId, 4_000 * 1e6);
+
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 5_000 * 1e18);
+
+        // Pause auction contract
+        vm.prank(admin);
+        dutchAuction.pause();
+
+        // startAuction reverts when paused
+        vm.expectRevert();
+        dutchAuction.startAuction(vaultId);
+
+        // Unpause and start auction
+        vm.prank(admin);
+        dutchAuction.unpause();
+        dutchAuction.startAuction(vaultId);
+
+        // Re-pause
+        vm.prank(admin);
+        dutchAuction.pause();
+
+        // settleAuction reverts when paused
+        address liquidator = address(0x8888);
+        eurc.mint(liquidator, 6_000 * 1e6);
+        vm.startPrank(liquidator);
+        eurc.approve(address(dutchAuction), 6_000 * 1e6);
+        vm.expectRevert();
+        dutchAuction.settleAuction(vaultId);
+        vm.stopPrank();
+
+        // Unpause and settle
+        vm.prank(admin);
+        dutchAuction.unpause();
+        vm.startPrank(liquidator);
+        dutchAuction.settleAuction(vaultId);
+        vm.stopPrank();
+        assertTrue(dutchAuction.getAuction(vaultId).isSettled);
+    }
 }
 

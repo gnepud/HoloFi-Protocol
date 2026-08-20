@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import { ERC4626, ERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { ICardEligibilityPolicy } from "./interfaces/ICardEligibilityPolicy.sol";
 
@@ -13,7 +14,7 @@ interface IHoloFiVaultLoanCore {
  * @title HoloFiLendingPool
  * @notice Generic permissioned ERC-4626 liquidity pool issuing custom pToken share tokens against ERC-20 deposits.
  */
-contract HoloFiLendingPool is ERC4626 {
+contract HoloFiLendingPool is ERC4626, Pausable {
     uint256 public constant BPS_DENOMINATOR = 10000;
 
     AccessControlManager public immutable acm;
@@ -42,6 +43,7 @@ contract HoloFiLendingPool is ERC4626 {
     error ZeroAddressLoanCore();
     error UnauthorizedLoanCore(address caller);
     error UnauthorizedAdmin(address caller);
+    error UnauthorizedPauser(address caller);
     error InsufficientVaultLiquidity(uint256 available, uint256 required);
     error ShareTokenNonTransferable();
     error InvalidRiskParameters();
@@ -122,7 +124,37 @@ contract HoloFiLendingPool is ERC4626 {
         return super.totalAssets() + totalBorrows;
     }
 
-    function drawLiquidity(address recipient, uint256 amount) external {
+    function pause() external {
+        if (!acm.hasRole(acm.PAUSER_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedPauser(msg.sender);
+        }
+        _pause();
+    }
+
+    function unpause() external {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedAdmin(msg.sender);
+        }
+        _unpause();
+    }
+
+    function deposit(uint256 assets, address receiver) public virtual override whenNotPaused returns (uint256) {
+        return super.deposit(assets, receiver);
+    }
+
+    function mint(uint256 shares, address receiver) public virtual override whenNotPaused returns (uint256) {
+        return super.mint(shares, receiver);
+    }
+
+    function withdraw(uint256 assets, address receiver, address owner) public virtual override whenNotPaused returns (uint256) {
+        return super.withdraw(assets, receiver, owner);
+    }
+
+    function redeem(uint256 shares, address receiver, address owner) public virtual override whenNotPaused returns (uint256) {
+        return super.redeem(shares, receiver, owner);
+    }
+
+    function drawLiquidity(address recipient, uint256 amount) external whenNotPaused {
         if (msg.sender != loanCore && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedLoanCore(msg.sender);
         }
