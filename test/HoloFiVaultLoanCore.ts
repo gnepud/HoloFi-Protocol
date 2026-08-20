@@ -540,4 +540,51 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     expect(await loanCore.getHealthFactor(3n, ethers.parseUnits("10000", 18)))
       .to.equal(ethers.parseEther("1.4"));
   });
+
+  it("H-01: Should revert with ReentrancyGuardReentrantCall when attacker attempts reentrant call during onERC721Received", async function () {
+    const { loanCore, acm, admin, poolEurcAddr, vaultCard, priceFeed, minter, cardTypeId1, cardTypeId2 } =
+      await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    const attacker = await ethers.deployContract("ReentrantAttacker", [await loanCore.getAddress()]);
+    const attackerAddr = await attacker.getAddress();
+
+    // Approve KYB for attacker
+    await acm.connect(admin).setKybStatus(attackerAddr, true);
+
+    // Attacker creates vault
+    await attacker.createVault(poolEurcAddr);
+
+    // Mint two cards directly to attacker (tokens 3 and 4)
+    await vaultCard.connect(minter).mintCard(attackerAddr, cardTypeId1, ethers.keccak256(ethers.toUtf8Bytes("att1")), "ipfs://att1");
+    await vaultCard.connect(minter).mintCard(attackerAddr, cardTypeId2, ethers.keccak256(ethers.toUtf8Bytes("att2")), "ipfs://att2");
+    const attackCard1 = 3n;
+    const attackCard2 = 4n;
+
+    // Deposit collateral
+    await networkHelpers.impersonateAccount(attackerAddr);
+    const attackerSigner = await ethers.getSigner(attackerAddr);
+    await admin.sendTransaction({ to: attackerAddr, value: ethers.parseEther("1") });
+
+    await vaultCard.connect(attackerSigner).setApprovalForAll(await loanCore.getAddress(), true);
+    await attacker.depositCollateral(1n, [attackCard1, attackCard2]);
+
+    // Set prices
+    await priceFeed.connect(minter).setBatchPrices(
+      [cardTypeId1, cardTypeId2],
+      [ethers.parseUnits("6000", 18), ethers.parseUnits("4000", 18)]
+    );
+
+    // Configure attacker to attempt reentrant borrow during onERC721Received
+    await attacker.setAttackConfig(
+      2n, // AttackAction.ReenterBorrow
+      1n,
+      [],
+      ethers.parseUnits("1000", 6)
+    );
+
+    // Withdrawing card 1 should trigger onERC721Received and revert with ReentrancyGuardReentrantCall
+    await expect(
+      attacker.withdrawCollateral(1n, [attackCard1])
+    ).to.be.revertedWithCustomError(loanCore, "ReentrancyGuardReentrantCall");
+  });
 });

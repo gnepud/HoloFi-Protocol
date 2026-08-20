@@ -11,6 +11,7 @@ import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 import { GradeEligibilityPolicy } from "./policies/GradeEligibilityPolicy.sol";
 import { ICardEligibilityPolicy } from "./interfaces/ICardEligibilityPolicy.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
+import { ReentrantAttacker } from "./mocks/ReentrantAttacker.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
@@ -860,5 +861,49 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         vm.prank(store);
         loanCore.borrow(wbtcVaultId, 5_000 * 1e8);
         assertEq(loanCore.getHealthFactor(wbtcVaultId, 10_000 * 1e18), 1.4e18);
+    }
+
+    function test_H01_ReentrancyProtection_WithdrawCollateral() public {
+        // Deploy malicious reentrant attacker contract
+        ReentrantAttacker attacker = new ReentrantAttacker(address(loanCore));
+
+        // Grant KYB to attacker contract
+        vm.prank(admin);
+        acm.setKybStatus(address(attacker), true);
+
+        // Attacker creates a vault
+        vm.prank(address(attacker));
+        uint256 attackerVaultId = loanCore.createVault(address(pool));
+
+        // Mint two cards directly to attacker
+        vm.startPrank(minter);
+        uint256 attackCard1 = vaultCard.mintCard(address(attacker), cardTypeId1, keccak256("attack_1"), "ipfs://att1");
+        uint256 attackCard2 = vaultCard.mintCard(address(attacker), cardTypeId2, keccak256("attack_2"), "ipfs://att2");
+        vm.stopPrank();
+
+        // Attacker deposits both cards
+        vm.startPrank(address(attacker));
+        vaultCard.setApprovalForAll(address(loanCore), true);
+        uint256[] memory depositTokens = new uint256[](2);
+        depositTokens[0] = attackCard1;
+        depositTokens[1] = attackCard2;
+        loanCore.depositCollateral(attackerVaultId, depositTokens);
+        vm.stopPrank();
+
+        // Configure attacker to attempt reentrant borrow during onERC721Received
+        attacker.setAttackConfig(
+            ReentrantAttacker.AttackAction.ReenterBorrow,
+            attackerVaultId,
+            new uint256[](0),
+            1_000 * 1e6
+        );
+
+        // Attacker calls withdrawCollateral for attackCard1 -> onERC721Received attempts reentrant borrow -> REVERTS
+        uint256[] memory withdrawTokens = new uint256[](1);
+        withdrawTokens[0] = attackCard1;
+
+        vm.prank(address(attacker));
+        vm.expectRevert(); // ReentrancyGuardReentrantCall()
+        loanCore.withdrawCollateral(attackerVaultId, withdrawTokens);
     }
 }

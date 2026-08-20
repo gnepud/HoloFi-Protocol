@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { DecimalMath } from "./libraries/DecimalMath.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { HoloFiVaultCard } from "./HoloFiVaultCard.sol";
@@ -13,7 +14,7 @@ import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
  * @title HoloFiVaultLoanCore
  * @notice Core credit manager and collateral escrow contract for HoloFi protocol.
  */
-contract HoloFiVaultLoanCore is IERC721Receiver {
+contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard {
     enum VaultStatus { Active, Liquidating, Closed }
 
     struct CollateralVault {
@@ -202,7 +203,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         emit VaultCreated(vaultId, msg.sender, lendingPool);
     }
 
-    function depositCollateral(uint256 vaultId, uint256[] calldata tokenIds) external {
+    function depositCollateral(uint256 vaultId, uint256[] calldata tokenIds) external nonReentrant {
         CollateralVault storage vault = vaults[vaultId];
         if (vault.owner != msg.sender) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
@@ -238,7 +239,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         emit CollateralDeposited(vaultId, msg.sender, tokenIds);
     }
 
-    function withdrawCollateral(uint256 vaultId, uint256[] calldata tokenIds) public {
+    function _withdrawCollateral(uint256 vaultId, uint256[] calldata tokenIds) internal {
         CollateralVault storage vault = vaults[vaultId];
         if (vault.owner != msg.sender) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
@@ -291,66 +292,11 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         emit CollateralWithdrawn(vaultId, vault.owner, tokenIds);
     }
 
-    function repayAndWithdraw(
-        uint256 vaultId,
-        uint256 repayAmount,
-        uint256[] calldata withdrawTokenIds
-    ) external {
-        if (withdrawTokenIds.length > 0) {
-            if (vaults[vaultId].owner != msg.sender) {
-                revert UnauthorizedVaultOwner(vaultId, msg.sender);
-            }
-        }
-
-        if (repayAmount > 0) {
-            repay(vaultId, repayAmount);
-        }
-
-        if (withdrawTokenIds.length > 0) {
-            withdrawCollateral(vaultId, withdrawTokenIds);
-        }
+    function withdrawCollateral(uint256 vaultId, uint256[] calldata tokenIds) external nonReentrant {
+        _withdrawCollateral(vaultId, tokenIds);
     }
 
-    function getVaultFMV(uint256 vaultId) public view returns (uint256 totalFmv) {
-        uint256[] memory tokenIds = vaults[vaultId].tokenIds;
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            uint256 tokenId = tokenIds[i];
-            HoloFiVaultCard.CardMetadata memory card = vaultCard.getCard(tokenId);
-            (uint256 price, ) = priceFeed.getPrice(card.cardTypeId);
-            totalFmv += price;
-        }
-    }
-
-    function borrow(uint256 vaultId, uint256 amount) external {
-        CollateralVault storage vault = vaults[vaultId];
-        if (msg.sender != vault.owner) {
-            revert UnauthorizedVaultOwner(vaultId, msg.sender);
-        }
-        if (vault.status != VaultStatus.Active) {
-            revert VaultNotActive(vaultId);
-        }
-        if (amount == 0) {
-            revert ZeroBorrowAmount();
-        }
-
-        accrueInterest(vaultId);
-
-        uint256 vaultFmv = getVaultFMV(vaultId);
-        uint256 maxBorrow = getMaxBorrowCapacity(vaultId, vaultFmv);
-        uint256 newTotalDebt = getTotalDebt(vaultId) + amount;
-
-        if (newTotalDebt > maxBorrow) {
-            revert ExceedsMaxBorrowCapacity(vaultId, newTotalDebt, maxBorrow);
-        }
-
-        vault.principalDebt += amount;
-
-        HoloFiLendingPool(vault.lendingPool).drawLiquidity(vault.owner, amount);
-
-        emit BorrowExecuted(vaultId, vault.owner, vault.lendingPool, amount, vault.principalDebt);
-    }
-
-    function repay(uint256 vaultId, uint256 amount) public {
+    function _repay(uint256 vaultId, uint256 amount) internal {
         CollateralVault storage vault = vaults[vaultId];
         if (vault.status != VaultStatus.Active) {
             revert VaultNotActive(vaultId);
@@ -394,7 +340,70 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         );
     }
 
-    function startLiquidation(uint256 vaultId) external {
+    function repay(uint256 vaultId, uint256 amount) external nonReentrant {
+        _repay(vaultId, amount);
+    }
+
+    function repayAndWithdraw(
+        uint256 vaultId,
+        uint256 repayAmount,
+        uint256[] calldata withdrawTokenIds
+    ) external nonReentrant {
+        if (withdrawTokenIds.length > 0) {
+            if (vaults[vaultId].owner != msg.sender) {
+                revert UnauthorizedVaultOwner(vaultId, msg.sender);
+            }
+        }
+
+        if (repayAmount > 0) {
+            _repay(vaultId, repayAmount);
+        }
+
+        if (withdrawTokenIds.length > 0) {
+            _withdrawCollateral(vaultId, withdrawTokenIds);
+        }
+    }
+
+    function getVaultFMV(uint256 vaultId) public view returns (uint256 totalFmv) {
+        uint256[] memory tokenIds = vaults[vaultId].tokenIds;
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            uint256 tokenId = tokenIds[i];
+            HoloFiVaultCard.CardMetadata memory card = vaultCard.getCard(tokenId);
+            (uint256 price, ) = priceFeed.getPrice(card.cardTypeId);
+            totalFmv += price;
+        }
+    }
+
+    function borrow(uint256 vaultId, uint256 amount) external nonReentrant {
+        CollateralVault storage vault = vaults[vaultId];
+        if (msg.sender != vault.owner) {
+            revert UnauthorizedVaultOwner(vaultId, msg.sender);
+        }
+        if (vault.status != VaultStatus.Active) {
+            revert VaultNotActive(vaultId);
+        }
+        if (amount == 0) {
+            revert ZeroBorrowAmount();
+        }
+
+        accrueInterest(vaultId);
+
+        uint256 vaultFmv = getVaultFMV(vaultId);
+        uint256 maxBorrow = getMaxBorrowCapacity(vaultId, vaultFmv);
+        uint256 newTotalDebt = getTotalDebt(vaultId) + amount;
+
+        if (newTotalDebt > maxBorrow) {
+            revert ExceedsMaxBorrowCapacity(vaultId, newTotalDebt, maxBorrow);
+        }
+
+        vault.principalDebt += amount;
+
+        HoloFiLendingPool(vault.lendingPool).drawLiquidity(vault.owner, amount);
+
+        emit BorrowExecuted(vaultId, vault.owner, vault.lendingPool, amount, vault.principalDebt);
+    }
+
+    function startLiquidation(uint256 vaultId) external nonReentrant {
         if (msg.sender != dutchAuction) {
             revert UnauthorizedAuction(msg.sender);
         }
@@ -416,7 +425,7 @@ contract HoloFiVaultLoanCore is IERC721Receiver {
         emit VaultLiquidationStarted(vaultId);
     }
 
-    function finalizeLiquidation(uint256 vaultId, address liquidator) external {
+    function finalizeLiquidation(uint256 vaultId, address liquidator) external nonReentrant {
         if (msg.sender != dutchAuction) {
             revert UnauthorizedAuction(msg.sender);
         }
