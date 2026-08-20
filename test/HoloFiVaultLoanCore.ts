@@ -48,7 +48,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       1000n,
       500n
     );
-    const poolEurcAddr = await poolFactory.getPool(await eurc.getAddress());
+    const poolEurcAddr = await poolFactory.poolsByAsset(await eurc.getAddress(), 0n);
     const poolEurc = await ethers.getContractAt("HoloFiLendingPool", poolEurcAddr);
     await poolEurc.connect(admin).setLoanCore(await loanCore.getAddress());
     await eurc.mint(poolEurcAddr, ethers.parseUnits("100000", 6));
@@ -153,7 +153,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       1200n, // 12% Penalty
       1000n  // 10% Borrow rate
     );
-    const poolWethAddr = await poolFactory.getPool(await weth.getAddress());
+    const poolWethAddr = await poolFactory.poolsByAsset(await weth.getAddress(), 0n);
     const poolWeth = await ethers.getContractAt("HoloFiLendingPool", poolWethAddr);
     await poolWeth.connect(admin).setLoanCore(await loanCore.getAddress());
 
@@ -433,7 +433,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       1000n,
       800n
     );
-    const deluxePoolAddr = await poolFactory.getPool(await deluxeAsset.getAddress());
+    const deluxePoolAddr = await poolFactory.poolsByAsset(await deluxeAsset.getAddress(), 0n);
     const deluxePool = await ethers.getContractAt("HoloFiLendingPool", deluxePoolAddr);
     await deluxePool.connect(admin).setLoanCore(await loanCore.getAddress());
 
@@ -484,7 +484,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       1000n, // 10% penalty
       500n   // 5% rate
     );
-    const poolDaiAddr = await poolFactory.getPool(await dai.getAddress());
+    const poolDaiAddr = await poolFactory.poolsByAsset(await dai.getAddress(), 0n);
     const poolDai = await ethers.getContractAt("HoloFiLendingPool", poolDaiAddr);
     await poolDai.connect(admin).setLoanCore(await loanCore.getAddress());
     await dai.mint(poolDaiAddr, ethers.parseUnits("1000000", 18));
@@ -499,7 +499,7 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
       1000n,
       500n
     );
-    const poolWbtcAddr = await poolFactory.getPool(await wbtc.getAddress());
+    const poolWbtcAddr = await poolFactory.poolsByAsset(await wbtc.getAddress(), 0n);
     const poolWbtc = await ethers.getContractAt("HoloFiLendingPool", poolWbtcAddr);
     await poolWbtc.connect(admin).setLoanCore(await loanCore.getAddress());
     await wbtc.mint(poolWbtcAddr, ethers.parseUnits("1000000", 8));

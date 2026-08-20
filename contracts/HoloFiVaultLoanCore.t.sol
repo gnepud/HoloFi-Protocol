@@ -791,8 +791,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         // 1. Setup 18-decimal token pool (e.g. DAI)
         MockERC20 dai = new MockERC20("Dai Stablecoin", "DAI", 18);
         vm.prank(admin);
-        poolFactory.createPool(dai, "Pool DAI", "pDAI", 5000, 7000, 1000, 500);
-        HoloFiLendingPool daiPool = HoloFiLendingPool(poolFactory.getPool(address(dai)));
+        address daiPoolAddr = poolFactory.createPool(dai, "Pool DAI", "pDAI", 5000, 7000, 1000, 500);
+        HoloFiLendingPool daiPool = HoloFiLendingPool(daiPoolAddr);
         vm.prank(admin);
         daiPool.setLoanCore(address(loanCore));
         dai.mint(address(daiPool), 1_000_000 * 1e18);
@@ -800,8 +800,8 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         // 2. Setup 8-decimal token pool (e.g. WBTC)
         MockERC20 wbtc = new MockERC20("Wrapped BTC", "WBTC", 8);
         vm.prank(admin);
-        poolFactory.createPool(wbtc, "Pool WBTC", "pWBTC", 5000, 7000, 1000, 500);
-        HoloFiLendingPool wbtcPool = HoloFiLendingPool(poolFactory.getPool(address(wbtc)));
+        address wbtcPoolAddr = poolFactory.createPool(wbtc, "Pool WBTC", "pWBTC", 5000, 7000, 1000, 500);
+        HoloFiLendingPool wbtcPool = HoloFiLendingPool(wbtcPoolAddr);
         vm.prank(admin);
         wbtcPool.setLoanCore(address(loanCore));
         wbtc.mint(address(wbtcPool), 1_000_000 * 1e8);

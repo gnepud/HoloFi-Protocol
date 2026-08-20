@@ -41,7 +41,7 @@ contract HoloFiLendingPoolFactoryTest is Test {
         address poolAddr = factory.createPool(IERC20(address(eurc)), "Premium Pool EURC", "pEURC", 5000, 7000, 1000, 500);
 
         assertTrue(poolAddr != address(0));
-        assertEq(factory.getPool(address(eurc)), poolAddr);
+        assertEq(factory.poolsByAsset(address(eurc), 0), poolAddr);
         assertEq(factory.allPools(0), poolAddr);
         assertEq(factory.allPoolsLength(), 1);
         assertEq(factory.getPoolsByAssetLength(address(eurc)), 1);
@@ -63,7 +63,6 @@ contract HoloFiLendingPoolFactoryTest is Test {
         vm.stopPrank();
 
         assertTrue(premiumPoolAddr != deluxePoolAddr);
-        assertEq(factory.getPool(address(eurc)), premiumPoolAddr); // First pool is default lookup
         assertEq(factory.getPoolsByAssetLength(address(eurc)), 2);
         assertEq(factory.allPoolsLength(), 2);
 
@@ -105,5 +104,38 @@ contract HoloFiLendingPoolFactoryTest is Test {
 
     function test_IsValidPool_UnregisteredPool() public view {
         assertFalse(factory.isValidPool(address(0x9999)));
+    }
+
+    function test_L02_SetPoolStatus_AdminSuccess() public {
+        vm.prank(admin);
+        address pool = factory.createPool(IERC20(address(eurc)), "Pool EURC", "pEURC", 5000, 7000, 1000, 500);
+        assertTrue(factory.isValidPool(pool));
+
+        // Admin deprecates pool
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, true);
+        emit HoloFiLendingPoolFactory.PoolStatusUpdated(pool, false);
+        factory.setPoolStatus(pool, false);
+        assertFalse(factory.isValidPool(pool));
+
+        // Admin re-enables pool
+        vm.prank(admin);
+        factory.setPoolStatus(pool, true);
+        assertTrue(factory.isValidPool(pool));
+    }
+
+    function test_L02_RevertIf_SetPoolStatus_Unauthorized() public {
+        vm.prank(admin);
+        address pool = factory.createPool(IERC20(address(eurc)), "Pool EURC", "pEURC", 5000, 7000, 1000, 500);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPoolFactory.UnauthorizedOperator.selector, user));
+        factory.setPoolStatus(pool, false);
+    }
+
+    function test_L02_RevertIf_SetPoolStatus_ZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPoolFactory.ZeroAddressPool.selector));
+        factory.setPoolStatus(address(0), false);
     }
 }

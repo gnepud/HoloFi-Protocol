@@ -32,7 +32,7 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
       )
     ).to.emit(factory, "PoolCreated");
 
-    const eurcPoolAddr = await factory.getPool(eurcAddr);
+    const eurcPoolAddr = await factory.poolsByAsset(eurcAddr, 0n);
     expect(eurcPoolAddr).to.not.equal(ethers.ZeroAddress);
     expect(await factory.allPools(0n)).to.equal(eurcPoolAddr);
     expect(await factory.getPoolsByAssetLength(eurcAddr)).to.equal(1n);
@@ -55,7 +55,7 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
       )
     ).to.emit(factory, "PoolCreated");
 
-    const wethPoolAddr = await factory.getPool(wethAddr);
+    const wethPoolAddr = await factory.poolsByAsset(wethAddr, 0n);
     expect(wethPoolAddr).to.not.equal(ethers.ZeroAddress);
     expect(await factory.allPoolsLength()).to.equal(2n);
 
@@ -79,7 +79,7 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
       1000n,
       500n
     );
-    const premiumPoolAddr = await factory.getPool(eurcAddr);
+    const premiumPoolAddr = await factory.poolsByAsset(eurcAddr, 0n);
 
     await factory.connect(admin).createPool(
       eurcAddr,
@@ -121,7 +121,38 @@ describe("HoloFiLendingPoolFactory Integration Tests", function () {
   it("Should set isValidPool to true when pool is created", async function () {
     const { factory, eurc, admin } = await networkHelpers.loadFixture(deployFactoryFixture);
     await factory.connect(admin).createPool(await eurc.getAddress(), "Pool EURC", "pEURC", 5000n, 7000n, 1000n, 500n);
-    const poolAddr = await factory.getPool(await eurc.getAddress());
+    const poolAddr = await factory.poolsByAsset(await eurc.getAddress(), 0n);
+    expect(await factory.isValidPool(poolAddr)).to.be.true;
+  });
+
+  it("L-02: Should allow admin to setPoolStatus and emit PoolStatusUpdated event", async function () {
+    const { factory, eurc, admin, unauthorized } = await networkHelpers.loadFixture(deployFactoryFixture);
+    const eurcAddr = await eurc.getAddress();
+    await factory.connect(admin).createPool(eurcAddr, "Pool EURC", "pEURC", 5000n, 7000n, 1000n, 500n);
+    const poolAddr = await factory.poolsByAsset(eurcAddr, 0n);
+
+    expect(await factory.isValidPool(poolAddr)).to.be.true;
+
+    // Unauthorized cannot change pool status
+    await expect(
+      factory.connect(unauthorized).setPoolStatus(poolAddr, false)
+    ).to.be.revertedWithCustomError(factory, "UnauthorizedOperator").withArgs(unauthorized.address);
+
+    // Cannot set status for zero address
+    await expect(
+      factory.connect(admin).setPoolStatus(ethers.ZeroAddress, false)
+    ).to.be.revertedWithCustomError(factory, "ZeroAddressPool");
+
+    // Admin deactivates pool
+    await expect(
+      factory.connect(admin).setPoolStatus(poolAddr, false)
+    ).to.emit(factory, "PoolStatusUpdated")
+     .withArgs(poolAddr, false);
+
+    expect(await factory.isValidPool(poolAddr)).to.be.false;
+
+    // Admin reactivates pool
+    await factory.connect(admin).setPoolStatus(poolAddr, true);
     expect(await factory.isValidPool(poolAddr)).to.be.true;
   });
 });

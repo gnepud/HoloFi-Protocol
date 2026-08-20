@@ -61,7 +61,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
       1000n, // liquidationPenaltyBps
       0n     // borrowRateBpsPerYear
     );
-    const poolAddr = await poolFactory.getPool(await asset.getAddress());
+    const poolAddr = await poolFactory.poolsByAsset(await asset.getAddress(), 0n);
     const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
 
     await pool.connect(admin).setLoanCore(await loanCore.getAddress());
@@ -153,7 +153,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
       1000n, // liquidationPenaltyBps
       0n     // borrowRateBpsPerYear
     );
-    const poolAddr = await poolFactory.getPool(await asset.getAddress());
+    const poolAddr = await poolFactory.poolsByAsset(await asset.getAddress(), 0n);
     const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
 
     await pool.connect(admin).setLoanCore(await loanCore.getAddress());
@@ -222,7 +222,7 @@ describe("HoloFiDutchAuction Integration Tests", function () {
       1000n,
       500n
     );
-    const poolAddr = await poolFactory.getPool(await asset.getAddress());
+    const poolAddr = await poolFactory.poolsByAsset(await asset.getAddress(), 0n);
     const pool = await ethers.getContractAt("HoloFiLendingPool", poolAddr);
     await pool.connect(admin).setLoanCore(await loanCore.getAddress());
     await asset.mint(poolAddr, ethers.parseUnits("100000", 6));

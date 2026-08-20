@@ -76,7 +76,7 @@ describe("ViewCard CLI Script Integration Tests", function () {
       1000n,
       500n
     );
-    const poolAddr = await poolFactory.getPool(await eurc.getAddress());
+    const poolAddr = await poolFactory.poolsByAsset(await eurc.getAddress(), 0n);
 
     return {
       acm,

@@ -99,7 +99,7 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
       1000n,
       500n
     );
-    const poolAddr = await poolFactoryContract.getPool(await mockAsset.getAddress());
+    const poolAddr = await poolFactoryContract.poolsByAsset(await mockAsset.getAddress(), 0n);
 
     // Mint card NFT to store
     const cardTypeId = ethers.keccak256(ethers.toUtf8Bytes("Charizard_1st_Edition"));

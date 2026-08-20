@@ -11,15 +11,16 @@ import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
  */
 contract HoloFiLendingPoolFactory {
     AccessControlManager public immutable acm;
-    mapping(address => address) public getPool;
     mapping(address => address[]) public poolsByAsset;
     mapping(address => bool) public isValidPool;
     address[] public allPools;
 
     event PoolCreated(address indexed underlyingAsset, address poolAddress, string name, string symbol);
+    event PoolStatusUpdated(address indexed pool, bool isValid);
 
     error ZeroAddressACM();
     error ZeroAddressAsset();
+    error ZeroAddressPool();
     error UnauthorizedOperator(address caller);
 
     constructor(address _acm) {
@@ -57,14 +58,22 @@ contract HoloFiLendingPoolFactory {
         );
         pool = address(poolContract);
 
-        if (getPool[address(asset)] == address(0)) {
-            getPool[address(asset)] = pool;
-        }
         poolsByAsset[address(asset)].push(pool);
         isValidPool[pool] = true;
         allPools.push(pool);
 
         emit PoolCreated(address(asset), pool, name, symbol);
+    }
+
+    function setPoolStatus(address pool, bool isValid) external {
+        if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
+            revert UnauthorizedOperator(msg.sender);
+        }
+        if (pool == address(0)) {
+            revert ZeroAddressPool();
+        }
+        isValidPool[pool] = isValid;
+        emit PoolStatusUpdated(pool, isValid);
     }
 
     function getPoolsByAsset(address asset) external view returns (address[] memory) {
