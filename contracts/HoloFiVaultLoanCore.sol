@@ -235,6 +235,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         if (vault.owner != msg.sender) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
         }
+        if (!acm.isKybApproved(msg.sender)) {
+            revert KybRequired(msg.sender);
+        }
         if (vault.status != VaultStatus.Active) {
             revert VaultNotActive(vaultId);
         }
@@ -405,6 +408,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         CollateralVault storage vault = vaults[vaultId];
         if (msg.sender != vault.owner) {
             revert UnauthorizedVaultOwner(vaultId, msg.sender);
+        }
+        if (!acm.isKybApproved(msg.sender)) {
+            revert KybRequired(msg.sender);
         }
         if (vault.status != VaultStatus.Active) {
             revert VaultNotActive(vaultId);

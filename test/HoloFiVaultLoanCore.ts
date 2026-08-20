@@ -666,4 +666,38 @@ describe("HoloFiVaultLoanCore Integration Tests", function () {
     const diff = totalDebt1 > totalDebt2 ? totalDebt1 - totalDebt2 : totalDebt2 - totalDebt1;
     expect(diff).to.be.lte(10n);
   });
+
+  it("Should revert depositCollateral and borrow when merchant KYB status is revoked", async function () {
+    const { loanCore, vaultCard, priceFeed, poolEurcAddr, store, admin, minter, cardTypeId1, acm } =
+      await networkHelpers.loadFixture(deployLoanCoreFixture);
+
+    await loanCore.connect(store).createVault(poolEurcAddr);
+    const vaultId = 1n;
+    const cardId1 = 1n;
+
+    await vaultCard.connect(store).setApprovalForAll(await loanCore.getAddress(), true);
+    await loanCore.connect(store).depositCollateral(vaultId, [cardId1]);
+
+    await priceFeed.connect(minter).setPrice(cardTypeId1, ethers.parseUnits("10000", 18));
+
+    // Admin revokes store KYB
+    await acm.connect(admin).setKybStatus(store.address, false);
+
+    // borrow reverts with KybRequired
+    const borrowAmount = ethers.parseUnits("500", 6);
+    await expect(
+      loanCore.connect(store).borrow(vaultId, borrowAmount)
+    ).to.be.revertedWithCustomError(loanCore, "KybRequired")
+     .withArgs(store.address);
+
+    // depositCollateral reverts with KybRequired
+    await expect(
+      loanCore.connect(store).depositCollateral(vaultId, [2n])
+    ).to.be.revertedWithCustomError(loanCore, "KybRequired")
+     .withArgs(store.address);
+
+    // Store can still withdraw collateral
+    await loanCore.connect(store).withdrawCollateral(vaultId, [cardId1]);
+    expect(await vaultCard.ownerOf(cardId1)).to.equal(store.address);
+  });
 });

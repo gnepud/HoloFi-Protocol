@@ -1058,4 +1058,52 @@ contract HoloFiVaultLoanCoreTest is Test, IERC721Receiver {
         assertEq(v.lastInterestUpdateTime, t0 + 100);
         assertEq(v.accumulatedInterest, 0);
     }
+
+    function test_RevertIf_DepositCollateral_KybRevoked() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault(address(pool));
+
+        // Revoke KYB
+        vm.prank(admin);
+        acm.setKybStatus(store, false);
+
+        vm.startPrank(store);
+        vaultCard.setApprovalForAll(address(loanCore), true);
+        uint256[] memory tokens = new uint256[](1);
+        tokens[0] = cardId1;
+
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.KybRequired.selector, store));
+        loanCore.depositCollateral(vaultId, tokens);
+        vm.stopPrank();
+    }
+
+    function test_RevertIf_Borrow_KybRevoked() public {
+        vm.prank(store);
+        uint256 vaultId = loanCore.createVault(address(pool));
+
+        vm.startPrank(store);
+        vaultCard.setApprovalForAll(address(loanCore), true);
+        uint256[] memory tokens = new uint256[](1);
+        tokens[0] = cardId1;
+        loanCore.depositCollateral(vaultId, tokens);
+        vm.stopPrank();
+
+        vm.prank(oracle);
+        priceFeed.setPrice(cardTypeId1, 10_000 * 1e18);
+        eurc.mint(address(pool), 100_000 * 1e6);
+
+        // Revoke KYB
+        vm.prank(admin);
+        acm.setKybStatus(store, false);
+
+        // Attempting to borrow must revert with KybRequired
+        vm.prank(store);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiVaultLoanCore.KybRequired.selector, store));
+        loanCore.borrow(vaultId, 1_000 * 1e6);
+
+        // Store can still withdraw deposited collateral when debt is 0
+        vm.prank(store);
+        loanCore.withdrawCollateral(vaultId, tokens);
+        assertEq(vaultCard.ownerOf(cardId1), store);
+    }
 }
