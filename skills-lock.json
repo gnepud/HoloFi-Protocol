@@ -13,6 +13,12 @@
       "skillPath": "fizz/SKILL.md",
       "computedHash": "bc620ba21ec43fedf0ccec9366c16f865762c9057df213c6bec49ea18afffa1b"
     },
+    "scv-scan": {
+      "source": "kadenzipfel/scv-scan",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "ac99dc9cc2968eeccc91d3bf71ef3891a16e1ef4129635e257308ac585852c42"
+    },
     "setup-solidity-contracts": {
       "source": "OpenZeppelin/openzeppelin-skills",
       "sourceType": "github",

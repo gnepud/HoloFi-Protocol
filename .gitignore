@@ -32,3 +32,8 @@
 
 # Ignition deployments for local chain
 ignition/deployments/chain-31337
+
+# Agent
+.agents/
+.claude
+.superpowers/
