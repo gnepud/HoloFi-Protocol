@@ -5,6 +5,7 @@ const DeployHoloFiProtocol = buildModule("DeployHoloFiProtocol", (m) => {
   const oracleFeeder = m.getParameter("oracleFeeder", initialAdmin);
   const minter = m.getParameter("minter", initialAdmin);
   const treasury = m.getParameter("treasury", initialAdmin);
+  const pauser = m.getParameter("pauser", initialAdmin);
 
   // 1. AccessControlManager
   const acm = m.contract("AccessControlManager", [initialAdmin]);
@@ -45,10 +46,12 @@ const DeployHoloFiProtocol = buildModule("DeployHoloFiProtocol", (m) => {
   const LOCKER_ROLE = m.staticCall(acm, "LOCKER_ROLE");
   const ORACLE_ROLE = m.staticCall(acm, "ORACLE_ROLE");
   const MINTER_ROLE = m.staticCall(acm, "MINTER_ROLE");
+  const PAUSER_ROLE = m.staticCall(acm, "PAUSER_ROLE");
 
   m.call(acm, "grantRole", [LOCKER_ROLE, loanCore], { id: "grantRole_loanCoreLocker" });
   m.call(acm, "grantRole", [ORACLE_ROLE, oracleFeeder], { id: "grantRole_oracleFeeder" });
   m.call(acm, "grantRole", [MINTER_ROLE, minter], { id: "grantRole_minter" });
+  m.call(acm, "grantRole", [PAUSER_ROLE, pauser], { id: "grantRole_pauser" });
 
   return {
     acm,

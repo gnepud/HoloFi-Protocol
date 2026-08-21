@@ -9,7 +9,7 @@ const { ethers, ignition } = await network.create();
 
 describe("Hardhat Ignition Deployment Verification Suite", function () {
   it("Should deploy full HoloFi protocol via Ignition and verify interconnectivity and role assignments", async function () {
-    const [admin, oracleFeeder, minter, treasury] = await ethers.getSigners();
+    const [admin, oracleFeeder, minter, treasury, pauser] = await ethers.getSigners();
 
     const { acm, vaultCard, priceFeed, poolFactory, loanCore, dutchAuction } = await ignition.deploy(
       DeployHoloFiProtocol,
@@ -19,6 +19,7 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
             oracleFeeder: oracleFeeder.address,
             minter: minter.address,
             treasury: treasury.address,
+            pauser: pauser.address,
           },
         },
       }
@@ -57,11 +58,13 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     const LOCKER_ROLE = await acm.LOCKER_ROLE();
     const ORACLE_ROLE = await acm.ORACLE_ROLE();
     const MINTER_ROLE = await acm.MINTER_ROLE();
+    const PAUSER_ROLE = await acm.PAUSER_ROLE();
 
     expect(await acm.hasRole(LOCKER_ROLE, loanCoreAddr)).to.be.true;
     expect(await acm.hasRole(ADMIN_ROLE, loanCoreAddr)).to.be.false;
     expect(await acm.hasRole(ORACLE_ROLE, oracleFeeder.address)).to.be.true;
     expect(await acm.hasRole(MINTER_ROLE, minter.address)).to.be.true;
+    expect(await acm.hasRole(PAUSER_ROLE, pauser.address)).to.be.true;
   });
 
   it("Should allow KYB store to deposit collateral into loanCore deployed via Ignition without UnauthorizedLockOperator revert", async function () {
