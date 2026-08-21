@@ -115,13 +115,15 @@ describe("HoloFiLendingPool Integration Tests", function () {
     const { mockEurc, mockWeth, poolEurc, poolWeth, lp } = await networkHelpers.loadFixture(deployLendingPoolFixture);
 
     const eurcAmount = ethers.parseUnits("1000", 6);
+    const expectedEurcShares = ethers.parseUnits("1000", 9); // 6 + 3 = 9 decimals
     await poolEurc.connect(lp).deposit(eurcAmount, lp.address);
-    expect(await poolEurc.balanceOf(lp.address)).to.equal(eurcAmount);
+    expect(await poolEurc.balanceOf(lp.address)).to.equal(expectedEurcShares);
     expect(await mockEurc.balanceOf(await poolEurc.getAddress())).to.equal(eurcAmount);
 
     const wethAmount = ethers.parseUnits("2", 18);
+    const expectedWethShares = ethers.parseUnits("2", 21); // 18 + 3 = 21 decimals
     await poolWeth.connect(lp).deposit(wethAmount, lp.address);
-    expect(await poolWeth.balanceOf(lp.address)).to.equal(wethAmount);
+    expect(await poolWeth.balanceOf(lp.address)).to.equal(expectedWethShares);
     expect(await mockWeth.balanceOf(await poolWeth.getAddress())).to.equal(wethAmount);
   });
 
@@ -230,7 +232,7 @@ describe("HoloFiLendingPool Integration Tests", function () {
     await poolEurc.connect(lp).deposit(initialDeposit, lp.address);
 
     expect(await poolEurc.totalAssets()).to.equal(initialDeposit);
-    expect(await poolEurc.totalSupply()).to.equal(initialDeposit);
+    expect(await poolEurc.totalSupply()).to.equal(ethers.parseUnits("100000", 9));
     expect(await poolEurc.totalBorrows()).to.equal(0n);
 
     // 2. Borrower borrows 90,000 EURC through loanCore
@@ -244,16 +246,17 @@ describe("HoloFiLendingPool Integration Tests", function () {
 
     // 3. A second user deposits 10,000 EURC while loan is active
     const secondUserDeposit = ethers.parseUnits("10000", 6);
+    const expectedSecondUserShares = ethers.parseUnits("10000", 9);
     await mockEurc.mint(unauthorized.address, secondUserDeposit);
     await mockEurc.connect(unauthorized).approve(await poolEurc.getAddress(), ethers.MaxUint256);
 
-    // convertToShares must evaluate to 10,000 shares (1:1), NOT 100,000 shares
-    expect(await poolEurc.convertToShares(secondUserDeposit)).to.equal(secondUserDeposit);
+    // convertToShares must evaluate to 10,000 shares in 9 decimals (1:1 with offset 3), NOT 100,000 shares
+    expect(await poolEurc.convertToShares(secondUserDeposit)).to.equal(expectedSecondUserShares);
     await poolEurc.connect(unauthorized).deposit(secondUserDeposit, unauthorized.address);
 
-    expect(await poolEurc.balanceOf(unauthorized.address)).to.equal(secondUserDeposit);
+    expect(await poolEurc.balanceOf(unauthorized.address)).to.equal(expectedSecondUserShares);
     expect(await poolEurc.totalAssets()).to.equal(ethers.parseUnits("110000", 6));
-    expect(await poolEurc.totalSupply()).to.equal(ethers.parseUnits("110000", 6));
+    expect(await poolEurc.totalSupply()).to.equal(ethers.parseUnits("110000", 9));
 
     // 4. Borrower repays 90,000 principal + 4,500 interest = 94,500 EURC
     const repaymentAmount = ethers.parseUnits("94500", 6);
@@ -345,5 +348,101 @@ describe("HoloFiLendingPool Integration Tests", function () {
     await poolEurc.connect(fakeLoanCore).returnLiquidity(borrower.address, drawAmount, drawAmount);
     expect(await poolEurc.totalBorrows()).to.equal(0n);
     expect(await mockEurc.balanceOf(await poolEurc.getAddress())).to.equal(depositAmount);
+  });
+
+  it("Should revert on zero assets or zero shares deposit/mint/withdraw/redeem", async function () {
+    const { poolEurc, lp } = await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    await expect(poolEurc.connect(lp).deposit(0n, lp.address)).to.be.revertedWithCustomError(
+      poolEurc,
+      "ZeroAssets"
+    );
+
+    await expect(poolEurc.connect(lp).mint(0n, lp.address)).to.be.revertedWithCustomError(
+      poolEurc,
+      "ZeroShares"
+    );
+
+    const depositAmount = ethers.parseUnits("100", 6);
+    await poolEurc.connect(lp).deposit(depositAmount, lp.address);
+
+    await expect(poolEurc.connect(lp).withdraw(0n, lp.address, lp.address)).to.be.revertedWithCustomError(
+      poolEurc,
+      "ZeroAssets"
+    );
+
+    await expect(poolEurc.connect(lp).redeem(0n, lp.address, lp.address)).to.be.revertedWithCustomError(
+      poolEurc,
+      "ZeroShares"
+    );
+  });
+
+  it("Should strictly revert with ZeroShares when deposit amount rounds down to zero shares in inflated vault", async function () {
+    const { mockEurc, poolEurc, unauthorized, borrower } =
+      await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    const attacker = unauthorized;
+    const victim = borrower;
+
+    await mockEurc.mint(attacker.address, ethers.parseUnits("20000", 6));
+    await mockEurc.connect(attacker).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+
+    await mockEurc.mint(victim.address, ethers.parseUnits("100", 6));
+    await mockEurc.connect(victim).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+
+    // 1. Attacker deposits 1 wei
+    await poolEurc.connect(attacker).deposit(1n, attacker.address);
+
+    // 2. Attacker donates 10,000 EURC
+    await mockEurc.connect(attacker).transfer(await poolEurc.getAddress(), ethers.parseUnits("10000", 6));
+
+    // 3. Victim deposits small non-zero amount (1000 wei = 0.001 EURC) that computes to 0 shares
+    expect(await poolEurc.previewDeposit(1000n)).to.equal(0n);
+
+    // 4. Must strictly revert with ZeroShares (assets > 0, shares == 0)
+    await expect(
+      poolEurc.connect(victim).deposit(1000n, victim.address)
+    ).to.be.revertedWithCustomError(poolEurc, "ZeroShares");
+  });
+
+  it("Should mitigate ERC-4626 donation / inflation attack via decimalsOffset virtual shares", async function () {
+    const { mockEurc, poolEurc, unauthorized, borrower } =
+      await networkHelpers.loadFixture(deployLendingPoolFixture);
+
+    const attacker = unauthorized;
+    const victim = borrower;
+
+    // Attacker has funds
+    await mockEurc.mint(attacker.address, ethers.parseUnits("10000", 6));
+    await mockEurc.connect(attacker).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+
+    // Victim has funds
+    await mockEurc.mint(victim.address, ethers.parseUnits("1000", 6));
+    await mockEurc.connect(victim).approve(await poolEurc.getAddress(), ethers.MaxUint256);
+
+    // 1. Attacker makes minimal 1 wei initial deposit
+    await poolEurc.connect(attacker).deposit(1n, attacker.address);
+    const attackerShares = await poolEurc.balanceOf(attacker.address);
+    // With decimalsOffset 3, attacker receives 1000 shares
+    expect(attackerShares).to.equal(1000n);
+
+    // 2. Attacker attempts donation attack: transfers 1,000 EURC directly to pool
+    await mockEurc.connect(attacker).transfer(await poolEurc.getAddress(), ethers.parseUnits("1000", 6));
+
+    // 3. Victim deposits 100 EURC
+    const victimDeposit = ethers.parseUnits("100", 6);
+    await poolEurc.connect(victim).deposit(victimDeposit, victim.address);
+    const victimShares = await poolEurc.balanceOf(victim.address);
+
+    // Victim MUST receive non-zero shares (not rounded down to 0)
+    expect(victimShares).to.be.gt(0n);
+
+    // 4. Attacker attempts to redeem all initial shares
+    const attackerRedeemed = await poolEurc.connect(attacker).redeem.staticCall(attackerShares, attacker.address, attacker.address);
+
+    // Attacker invested 1 wei + 1,000 EURC = 1,000.000001 EURC.
+    // Attacker gets back only ~500 EURC due to virtual shares absorbing half the donation!
+    expect(attackerRedeemed).to.be.lt(ethers.parseUnits("501", 6));
+    expect(attackerRedeemed).to.be.gt(ethers.parseUnits("499", 6));
   });
 });

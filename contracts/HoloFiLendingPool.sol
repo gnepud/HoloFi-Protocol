@@ -41,6 +41,8 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         uint256 borrowRateBpsPerYear
     );
 
+    error ZeroShares();
+    error ZeroAssets();
     error ZeroAddressAsset();
     error ZeroAddressACM();
     error ZeroAddressLoanCore();
@@ -143,18 +145,30 @@ contract HoloFiLendingPool is ERC4626, Pausable {
     }
 
     function deposit(uint256 assets, address receiver) public virtual override whenNotPaused returns (uint256) {
+        if (assets == 0) {
+            revert ZeroAssets();
+        }
         return super.deposit(assets, receiver);
     }
 
     function mint(uint256 shares, address receiver) public virtual override whenNotPaused returns (uint256) {
+        if (shares == 0) {
+            revert ZeroShares();
+        }
         return super.mint(shares, receiver);
     }
 
     function withdraw(uint256 assets, address receiver, address owner) public virtual override whenNotPaused returns (uint256) {
+        if (assets == 0) {
+            revert ZeroAssets();
+        }
         return super.withdraw(assets, receiver, owner);
     }
 
     function redeem(uint256 shares, address receiver, address owner) public virtual override whenNotPaused returns (uint256) {
+        if (shares == 0) {
+            revert ZeroShares();
+        }
         return super.redeem(shares, receiver, owner);
     }
 
@@ -191,5 +205,38 @@ contract HoloFiLendingPool is ERC4626, Pausable {
             revert ShareTokenNonTransferable();
         }
         super._update(from, to, value);
+    }
+
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        if (assets == 0) {
+            revert ZeroAssets();
+        }
+        if (shares == 0) {
+            revert ZeroShares();
+        }
+        super._deposit(caller, receiver, assets, shares);
+    }
+
+    function _withdraw(
+        address caller,
+        address receiver,
+        address owner,
+        uint256 assets,
+        uint256 shares
+    ) internal virtual override {
+        if (assets == 0) {
+            revert ZeroAssets();
+        }
+        if (shares == 0) {
+            revert ZeroShares();
+        }
+        super._withdraw(caller, receiver, owner, assets, shares);
+    }
+
+    /**
+     * @dev Introduces a 3-decimal offset (10^3 virtual shares) to mitigate ERC-4626 inflation and donation attacks.
+     */
+    function _decimalsOffset() internal view virtual override returns (uint8) {
+        return 3;
     }
 }

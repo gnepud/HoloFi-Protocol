@@ -191,23 +191,23 @@ describe("Hardhat Ignition Deployment Verification Suite", function () {
     expect(await (mockAsset as any).balanceOf(premiumPoolAddr)).to.equal(5_000_000_000_000n);
     expect(await (mockAsset as any).balanceOf(deluxePoolAddr)).to.equal(5_000_000_000_000n);
 
-    // Verify ERC-4626 balanced accounting and locked seed liquidity in both pools
+    // Verify ERC-4626 balanced accounting and locked seed liquidity in both pools (with 3-decimal offset: 9 decimals)
     expect(await premiumContract.totalAssets()).to.equal(5_000_000_000_000n);
-    expect(await premiumContract.totalSupply()).to.equal(5_000_000_000_000n);
-    expect(await premiumContract.balanceOf(DEAD_ADDRESS)).to.equal(5_000_000_000_000n);
+    expect(await premiumContract.totalSupply()).to.equal(5_000_000_000_000_000n);
+    expect(await premiumContract.balanceOf(DEAD_ADDRESS)).to.equal(5_000_000_000_000_000n);
 
     expect(await deluxeContract.totalAssets()).to.equal(5_000_000_000_000n);
-    expect(await deluxeContract.totalSupply()).to.equal(5_000_000_000_000n);
-    expect(await deluxeContract.balanceOf(DEAD_ADDRESS)).to.equal(5_000_000_000_000n);
+    expect(await deluxeContract.totalSupply()).to.equal(5_000_000_000_000_000n);
+    expect(await deluxeContract.balanceOf(DEAD_ADDRESS)).to.equal(5_000_000_000_000_000n);
 
-    // Verify subsequent user deposit receives exact 1:1 shares in Premium Pool
+    // Verify subsequent user deposit receives exact shares in Premium Pool (9 decimals)
     const [_, __, ___, ____, lpUser] = await ethers.getSigners();
     const userDepositAmount = 1_000_000_000n; // 1,000 EURC
     await (mockAsset as any).mint(lpUser.address, userDepositAmount);
     await (mockAsset as any).connect(lpUser).approve(premiumPoolAddr, userDepositAmount);
     await premiumContract.connect(lpUser).deposit(userDepositAmount, lpUser.address);
 
-    expect(await premiumContract.balanceOf(lpUser.address)).to.equal(userDepositAmount);
+    expect(await premiumContract.balanceOf(lpUser.address)).to.equal(1_000_000_000_000n);
   });
 
   it("Should deploy 2 default lending pools targeting an existing ERC20 asset via DeployHoloFiLendingPool", async function () {

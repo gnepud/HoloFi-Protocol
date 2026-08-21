@@ -113,8 +113,8 @@ contract HoloFiLendingPoolTest is Test {
     function test_DepositAndRedeem_6Decimals() public {
         vm.prank(lp);
         uint256 shares = poolEurc.deposit(1000 * 1e6, lp);
-        assertEq(shares, 1000 * 1e6);
-        assertEq(poolEurc.balanceOf(lp), 1000 * 1e6);
+        assertEq(shares, 1000 * 1e9);
+        assertEq(poolEurc.balanceOf(lp), 1000 * 1e9);
 
         // Inject 500 EURC interest into pool
         eurc.mint(address(poolEurc), 500 * 1e6);
@@ -128,11 +128,13 @@ contract HoloFiLendingPoolTest is Test {
     function test_DepositAndRedeem_18Decimals() public {
         vm.prank(lp);
         uint256 shares = poolWeth.deposit(1e18, lp);
-        assertEq(shares, 1e18);
+        assertEq(shares, 1e21);
+        assertEq(poolWeth.balanceOf(lp), 1e21);
 
         // Inject 0.5 WETH interest into pool
         weth.mint(address(poolWeth), 5e17);
 
+        // Redeem shares
         vm.prank(lp);
         uint256 assetsReturned = poolWeth.redeem(shares, lp, lp);
         assertApproxEqAbs(assetsReturned, 1.5e18, 1);
@@ -330,10 +332,10 @@ contract HoloFiLendingPoolTest is Test {
         uint256 shares = poolEurc.deposit(10_000 * 1e6, secondUser);
         vm.stopPrank();
 
-        // Must receive 10,000 shares (1:1), not 100,000 shares
-        assertEq(shares, 10_000 * 1e6);
+        // Must receive 10,000 shares in 9 decimals (1:1 with offset 3), not 100,000 shares
+        assertEq(shares, 10_000 * 1e9);
         assertEq(poolEurc.totalAssets(), 110_000 * 1e6);
-        assertEq(poolEurc.totalSupply(), 110_000 * 1e6);
+        assertEq(poolEurc.totalSupply(), 110_000 * 1e9);
 
         // 4. Return Liquidity with interest (90,000 + 4,500 = 94,500 EURC)
         eurc.mint(borrower, 94_500 * 1e6);
@@ -479,5 +481,99 @@ contract HoloFiLendingPoolTest is Test {
         poolEurc.returnLiquidity(borrower, 3_000 * 1e6, 3_000 * 1e6);
         assertEq(eurc.balanceOf(address(poolEurc)), 10_000 * 1e6);
         assertEq(poolEurc.totalBorrows(), 0);
+    }
+
+    function test_RevertIf_ZeroAmount_Deposit_Mint_Withdraw_Redeem() public {
+        vm.startPrank(lp);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ZeroAssets.selector));
+        poolEurc.deposit(0, lp);
+
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ZeroShares.selector));
+        poolEurc.mint(0, lp);
+
+        poolEurc.deposit(100 * 1e6, lp);
+
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ZeroAssets.selector));
+        poolEurc.withdraw(0, lp, lp);
+
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ZeroShares.selector));
+        poolEurc.redeem(0, lp, lp);
+        vm.stopPrank();
+    }
+
+    function test_RevertIf_ZeroShares_WhenInflatedDepositRoundsDown() public {
+        address attacker = address(0xAAAA);
+        address victim = address(0xBBBB);
+
+        eurc.mint(attacker, 20_000 * 1e6);
+        eurc.mint(victim, 100 * 1e6);
+
+        vm.prank(attacker);
+        eurc.approve(address(poolEurc), type(uint256).max);
+
+        vm.prank(victim);
+        eurc.approve(address(poolEurc), type(uint256).max);
+
+        // 1. Attacker deposits 1 wei
+        vm.prank(attacker);
+        poolEurc.deposit(1, attacker);
+
+        // 2. Attacker donates 10,000 EURC to inflate price per share
+        vm.prank(attacker);
+        eurc.transfer(address(poolEurc), 10_000 * 1e6);
+
+        // 3. Victim tries to deposit small non-zero assets (e.g. 1000 wei = 0.001 EURC)
+        // With totalAssets = 10_000_000_001 and totalSupply = 1000,
+        // shares = 1000 * 2000 / 10_000_000_002 = 0
+        // Because assets > 0 but shares == 0, this strictly triggers ZeroShares()!
+        assertEq(poolEurc.previewDeposit(1000), 0);
+        vm.prank(victim);
+        vm.expectRevert(abi.encodeWithSelector(HoloFiLendingPool.ZeroShares.selector));
+        poolEurc.deposit(1000, victim);
+    }
+
+    function test_InflationAttack_MitigatedByDecimalsOffset() public {
+        address attacker = address(0xAAAA);
+        address victim = address(0xBBBB);
+
+        eurc.mint(attacker, 10_000 * 1e6);
+        eurc.mint(victim, 1_000 * 1e6);
+
+        vm.prank(attacker);
+        eurc.approve(address(poolEurc), type(uint256).max);
+
+        vm.prank(victim);
+        eurc.approve(address(poolEurc), type(uint256).max);
+
+        // 1. Attacker makes minimal initial deposit (1 wei = 1)
+        vm.prank(attacker);
+        uint256 attackerInitialShares = poolEurc.deposit(1, attacker);
+        // With decimalsOffset 3, attacker gets 1 * 1000 = 1000 shares
+        assertEq(attackerInitialShares, 1000);
+
+        // 2. Attacker attempts donation attack: directly transfers 1,000 EURC to pool
+        vm.prank(attacker);
+        eurc.transfer(address(poolEurc), 1_000 * 1e6);
+
+        // 3. Victim deposits 100 EURC (100 * 1e6)
+        vm.prank(victim);
+        uint256 victimShares = poolEurc.deposit(100 * 1e6, victim);
+
+        // Victim MUST receive non-zero shares (not rounded down to 0)
+        assertTrue(victimShares > 0);
+
+        // 4. Attacker attempts to redeem all initial shares (1000 shares)
+        vm.prank(attacker);
+        uint256 attackerRedeemedAssets = poolEurc.redeem(attackerInitialShares, attacker, attacker);
+
+        // Attacker invested 1 wei + 1,000 EURC = 1,000.000001 EURC.
+        // Due to virtual shares capturing ~50% of the donation, attacker gets back only ~500 EURC (severe loss)
+        assertTrue(attackerRedeemedAssets < 501 * 1e6);
+        assertTrue(attackerRedeemedAssets > 499 * 1e6);
+
+        // 5. Victim redeems shares and safely recovers funds
+        vm.prank(victim);
+        uint256 victimRedeemedAssets = poolEurc.redeem(victimShares, victim, victim);
+        assertTrue(victimRedeemedAssets > 90 * 1e6);
     }
 }
