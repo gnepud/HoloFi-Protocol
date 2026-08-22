@@ -457,3 +457,103 @@ npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 10000 --token
 ```bash
 ACCOUNT=0x70997970C51812dc3A010C7d01b50e0d17dc79C8 AMOUNT=10000 npx hardhat run scripts/mint-mock-token.ts --network localhost
 ```
+
+---
+
+## 7. Collateral Vault Details Viewer (`scripts/view-vault.ts`)
+
+The HoloFi protocol includes a dedicated CLI inspection tool located at [`scripts/view-vault.ts`](../scripts/view-vault.ts) to query and display comprehensive information about any given collateral vault (`vaultId`).
+
+It aggregates data across:
+- **`HoloFiVaultLoanCore`**: Vault status, owner address, principal debt, accumulated interest, pending interest, total debt, total FMV, max borrow capacity, and health factor.
+- **`AccessControlManager`**: Store owner KYB verification status.
+- **`HoloFiLendingPool`**: Pool name, symbol, underlying asset, risk parameters (Max LTV, Liquidation Threshold, Liquidation Penalty, APY), and eligibility policy.
+- **`GradeEligibilityPolicy` / `ICardEligibilityPolicy`**: Policy criteria and rules (e.g. PSA 10 only).
+- **`HoloFiVaultCard` & `HoloFiCardPriceFeed`**: Individual deposited card token IDs, token URIs, card type IDs, attestation hashes, and real-time Oracle FMV valuations.
+
+### Command Syntax
+
+#### Method A: Direct CLI Execution (Recommended)
+```bash
+npm run view-vault <vaultId> [loanCoreAddress] [options]
+# or
+npx tsx scripts/view-vault.ts <vaultId> [loanCoreAddress] [options]
+```
+
+#### Method B: Hardhat Run with Environment Variables
+```bash
+VAULT_ID=<vaultId> [LOAN_CORE_ADDRESS=<address>] npx hardhat run scripts/view-vault.ts --network <network>
+```
+
+### CLI Arguments & Options
+
+| Argument / Flag | Type | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `<vaultId>` | Positional / Required | Numeric ID of the collateral vault to inspect | `npm run view-vault 1` |
+| `[loanCoreAddress]` | Positional / Optional | Address of the `HoloFiVaultLoanCore` contract | `npm run view-vault 1 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
+| `--loan-core`, `-l`, `--contract`, `-c` | Option Flag | Specify `HoloFiVaultLoanCore` contract address | `--loan-core 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
+| `--network`, `-n` | Option Flag | Target RPC network (default: `localhost`) | `--network sepolia` |
+| `--help`, `-h` | Option Flag | Display usage instructions and examples | `npm run view-vault --help` |
+
+### Address Resolution Precedence
+
+The script resolves the `HoloFiVaultLoanCore` contract address with the following fallback hierarchy:
+
+1. **CLI Positional Argument / Flag**: Passed directly via CLI or `--loan-core <address>`.
+2. **Environment Variable**: `LOAN_CORE_ADDRESS`, `VAULT_LOAN_CORE_ADDRESS`, or `CONTRACT_ADDRESS`.
+3. **Ignition Deployment Artefacts**: Auto-discovered from `ignition/deployments/chain-<chainId>/deployed_addresses.json` (`DeployHoloFiProtocol#HoloFiVaultLoanCore` or `HoloFiVaultLoanCore`) or root `deployed_addresses.json`.
+
+### Operator Examples
+
+#### 1. View Details for Active Collateral Vault
+```bash
+npm run view-vault 1
+```
+
+Output:
+```text
+================================================================================
+                         HoloFi Collateral Vault Details                         
+================================================================================
+Vault ID           : #1
+Vault Status       : ACTIVE [Borrowing & Collateral Active]
+Vault Owner (Store): 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 (KYB: APPROVED ✅)
+Loan Core Contract : 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+Last Interest Sync : 2026-08-21T18:00:00.000Z
+--------------------------------------------------------------------------------
+Bound Lending Pool & Risk Configuration:
+Lending Pool       : Premium Pool EURC (pEURC)
+Pool Address       : 0xd8058efe0198ae9dD7D563e1b4938Dcbc86A1F81
+Underlying Asset   : Euro Coin (EURC) - 0x5FbDB2315678afecb367f032d93F642f64180aa3
+Pool Risk Config   : Max LTV: 50.00% | Liq Threshold: 70.00% | Liq Penalty: 10.00% | APY: 5.00%
+Eligibility Policy : GradeEligibilityPolicy (PSA Grade 10) [0x0165878A594ca255338adfa4d48449f69242Eb8F]
+--------------------------------------------------------------------------------
+Collateral & Valuation:
+Deposited Cards    : 2 Card(s)
+Total Collateral   : 5,000.00 EUR
+Max Borrow Limit   : 2,500.00 EURC
+Collateral Cards   :
+  • Token #1 [0x8b329f6b92a543f9a7217983c27e8a946cb32cf39db99c855a8264e107db32d3] | FMV: 2,500.00 EUR | URI: ipfs://card1
+  • Token #2 [0x3d49f60e909a39f6044a30a109787ff8c5120689b9101b0f5ef22dcf1e70e28f] | FMV: 2,500.00 EUR | URI: ipfs://card2
+--------------------------------------------------------------------------------
+Debt & Financial Health:
+Principal Debt     : 1,000.00 EURC
+Accumulated Interest: 5.20 EURC
+Pending Interest   : 0.80 EURC
+Total Debt         : 1,006.00 EURC
+Remaining Borrow   : 1,494.00 EURC
+Current LTV        : 20.12%
+Health Factor (HF) : 3.48 (🟢 HEALTHY)
+================================================================================
+```
+
+#### 2. Query Vault on Sepolia Testnet
+```bash
+npm run view-vault 1 -- --network sepolia
+```
+
+#### 3. Explicit Loan Core Contract Address
+```bash
+npm run view-vault 1 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+```
+

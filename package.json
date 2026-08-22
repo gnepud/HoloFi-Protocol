@@ -5,6 +5,7 @@
   "scripts": {
     "roles": "tsx scripts/manage-roles.ts",
     "view-card": "tsx scripts/view-card.ts",
+    "view-vault": "tsx scripts/view-vault.ts",
     "mint-mock-token": "tsx scripts/mint-mock-token.ts",
     "test": "hardhat test",
     "build": "hardhat build"
