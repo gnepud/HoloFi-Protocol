@@ -98,6 +98,23 @@ describe("ManageRoles CLI Script Integration Tests", function () {
       expect(parsed.acmAddress).to.equal(customAcm);
     });
 
+    it("Should parse --network and -n flags", function () {
+      const target = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+      const parsed1 = parseCliArgs(["node", "manage-roles.ts", "check", target, "--network", "baseSepolia"]);
+      expect(parsed1.action).to.equal("check");
+      expect(parsed1.targetAddress).to.equal(target);
+      expect(parsed1.networkName).to.equal("baseSepolia");
+
+      const parsed2 = parseCliArgs(["node", "manage-roles.ts", "check", target, "-n", "sepolia"]);
+      expect(parsed2.networkName).to.equal("sepolia");
+
+      const parsed3 = parseCliArgs(["node", "manage-roles.ts", "--network=mainnet", "check", target]);
+      expect(parsed3.networkName).to.equal("mainnet");
+
+      const parsed4 = parseCliArgs(["node", "manage-roles.ts", "-n=polygon", "check", target]);
+      expect(parsed4.networkName).to.equal("polygon");
+    });
+
     it("Should parse --help flag", function () {
       const parsed = parseCliArgs(["node", "manage-roles.ts", "--help"]);
       expect(parsed.help).to.be.true;

@@ -225,8 +225,15 @@ npm run roles kyc 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 revoke
 
 #### 6. Specify Custom ACM Address on Testnet
 ```bash
-npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B --network baseSepolia
+npm run roles -- check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xA4a75B3f3e957222E0d67Ea8b643F137BDFCe03B --network baseSepolia
+# or using npx tsx directly:
+npx tsx scripts/manage-roles.ts check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --network baseSepolia
+# or using environment variable:
+HARDHAT_NETWORK=baseSepolia npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 ```
+
+> [!NOTE]
+> When passing `--network` or any option flag starting with `--` through `npm run`, npm requires a double dash `--` separator before the arguments (e.g. `npm run roles -- check <addr> --network baseSepolia`). Alternatively, use `npx tsx scripts/manage-roles.ts` or set `HARDHAT_NETWORK=<network>`.
 
 ---
 
@@ -333,14 +340,18 @@ Last Updated       : 2026-08-16T12:05:00.000Z (Unix: 1786881900)
 ================================================================================
 ```
 
-#### 3. Inspect Card on Sepolia Testnet
+#### 3. Inspect Card on Base Sepolia / Sepolia Testnet
 ```bash
-npm run view-card 1 --network sepolia
+npm run view-card -- 1 --network baseSepolia
+# or using npx tsx:
+npx tsx scripts/view-card.ts 1 --network baseSepolia
+# or using environment variable:
+HARDHAT_NETWORK=baseSepolia npm run view-card 1
 ```
 
 #### 4. Explicit Contract, Price Feed, and Loan Core Addresses
 ```bash
-npm run view-card 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 --price-feed 0x5FbDB2315678afecb367f032d93F642f64180aa3 --loan-core 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+npm run view-card -- 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 --price-feed 0x5FbDB2315678afecb367f032d93F642f64180aa3 --loan-core 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
 ```
 
 #### 5. Hardhat Runner Execution
@@ -358,7 +369,7 @@ The HoloFi protocol includes a dedicated testing and operator CLI tool located a
 
 #### Method A: Direct CLI Execution (Recommended)
 ```bash
-npm run mint-mock-token [action] <recipient_address> [amount] [token_address] [options]
+npm run mint-mock-token -- [action] <recipient_address> [amount] [token_address] [options]
 # or
 npx tsx scripts/mint-mock-token.ts [action] <recipient_address> [amount] [token_address] [options]
 ```
@@ -384,7 +395,7 @@ npx tsx scripts/mint-mock-token.ts [action] <recipient_address> [amount] [token_
 | `[token_address]` | Positional / Optional | Address of the `MockERC20` contract | `npm run mint-mock-token 0x7099... 1000 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
 | `--token`, `-t`, `--contract`, `-c` | Option Flag | Specify `MockERC20` contract address | `--token 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
 | `--amount`, `-a` | Option Flag | Specify token amount to mint | `--amount 25000` |
-| `--network`, `-n` | Option Flag | Target RPC network (default: `localhost`) | `--network sepolia` |
+| `--network`, `-n` | Option Flag | Target RPC network (default: `localhost`) | `--network baseSepolia` |
 | `--help`, `-h` | Option Flag | Display usage instructions and examples | `npm run mint-mock-token --help` |
 
 ### Address Resolution Precedence
@@ -443,14 +454,16 @@ Balance           : 10000.0 EURC (10000000000 base units)
 ================================================================================
 ```
 
-#### 4. Mint Mock Tokens on Sepolia Testnet
+#### 4. Mint Mock Tokens on Base Sepolia / Sepolia Testnet
 ```bash
-npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 25000 --network sepolia
+npm run mint-mock-token -- 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 25000 --network baseSepolia
+# or using npx tsx:
+npx tsx scripts/mint-mock-token.ts 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 25000 --network baseSepolia
 ```
 
 #### 5. Explicit Contract Address and Custom Amount
 ```bash
-npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 10000 --token 0x5FbDB2315678afecb367f032d93F642f64180aa3
+npm run mint-mock-token -- 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 10000 --token 0x5FbDB2315678afecb367f032d93F642f64180aa3
 ```
 
 #### 6. Hardhat Runner Execution
@@ -475,7 +488,7 @@ It aggregates data across:
 
 #### Method A: Direct CLI Execution (Recommended)
 ```bash
-npm run view-vault <vaultId> [loanCoreAddress] [options]
+npm run view-vault -- <vaultId> [loanCoreAddress] [options]
 # or
 npx tsx scripts/view-vault.ts <vaultId> [loanCoreAddress] [options]
 ```
@@ -492,7 +505,7 @@ VAULT_ID=<vaultId> [LOAN_CORE_ADDRESS=<address>] npx hardhat run scripts/view-va
 | `<vaultId>` | Positional / Required | Numeric ID of the collateral vault to inspect | `npm run view-vault 1` |
 | `[loanCoreAddress]` | Positional / Optional | Address of the `HoloFiVaultLoanCore` contract | `npm run view-vault 1 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
 | `--loan-core`, `-l`, `--contract`, `-c` | Option Flag | Specify `HoloFiVaultLoanCore` contract address | `--loan-core 0x5FbDB2315678afecb367f032d93F642f64180aa3` |
-| `--network`, `-n` | Option Flag | Target RPC network (default: `localhost`) | `--network sepolia` |
+| `--network`, `-n` | Option Flag | Target RPC network (default: `localhost`) | `--network baseSepolia` |
 | `--help`, `-h` | Option Flag | Display usage instructions and examples | `npm run view-vault --help` |
 
 ### Address Resolution Precedence
@@ -547,9 +560,13 @@ Health Factor (HF) : 3.48 (🟢 HEALTHY)
 ================================================================================
 ```
 
-#### 2. Query Vault on Sepolia Testnet
+#### 2. Query Vault on Base Sepolia / Sepolia Testnet
 ```bash
-npm run view-vault 1 -- --network sepolia
+npm run view-vault -- 1 --network baseSepolia
+# or using npx tsx:
+npx tsx scripts/view-vault.ts 1 --network baseSepolia
+# or using environment variable:
+HARDHAT_NETWORK=baseSepolia npm run view-vault 1
 ```
 
 #### 3. Explicit Loan Core Contract Address

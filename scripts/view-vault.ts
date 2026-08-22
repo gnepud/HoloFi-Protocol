@@ -735,8 +735,10 @@ export function printHelp(): void {
 HoloFi Vault Details Viewer CLI
 
 USAGE:
-  npm run view-vault <vaultId> [loanCoreAddress] [--network <network>]
+  npm run view-vault -- <vaultId> [loanCoreAddress] [--network <network>]
+  # or
   npx tsx scripts/view-vault.ts <vaultId> [loanCoreAddress] [--network <network>]
+  # or
   VAULT_ID=<vaultId> npx hardhat run scripts/view-vault.ts --network <network>
 
 OPTIONS:
@@ -753,8 +755,9 @@ EXAMPLES:
   # View details for Vault #2 with explicit loan core address
   npx tsx scripts/view-vault.ts 2 0x5FbDB2315678afecb367f032d93F642f64180aa3
 
-  # View details for Vault #1 on Sepolia network
-  npm run view-vault 1 -- --network sepolia
+  # View details for Vault #1 on Base Sepolia testnet
+  npm run view-vault -- 1 --network baseSepolia
+  npx tsx scripts/view-vault.ts 1 --network baseSepolia
 `);
 }
 

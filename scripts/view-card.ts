@@ -814,8 +814,10 @@ View on-chain metadata, asset attestation hashes, lock status,
 and oracle valuation for any HoloFiVaultCard NFT.
 
 Usage:
-  npm run view-card <tokenId> [vaultCardAddress] [options]
+  npm run view-card -- <tokenId> [vaultCardAddress] [options]
+  # or
   npx tsx scripts/view-card.ts <tokenId> [vaultCardAddress] [options]
+  # or
   TOKEN_ID=<tokenId> npx hardhat run scripts/view-card.ts --network <network>
 
 Positional Arguments:
@@ -826,7 +828,7 @@ Options:
   --contract, -c <addr>   Specify HoloFiVaultCard contract address
   --price-feed, -p <addr> Specify HoloFiCardPriceFeed contract address
   --loan-core, -l <addr>  Specify HoloFiVaultLoanCore contract address
-  --network, -n <net>     Target network (e.g. localhost, sepolia, mainnet). Default: localhost
+  --network, -n <net>     Target network (e.g. localhost, baseSepolia, sepolia, mainnet). Default: localhost
   --help, -h              Show this help message
 
 Environment Variables:
@@ -839,7 +841,8 @@ Environment Variables:
 Examples:
   npm run view-card 1
   npm run view-card 1 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9
-  npm run view-card 1 --network sepolia
+  npm run view-card -- 1 --network baseSepolia
+  npx tsx scripts/view-card.ts 1 --network baseSepolia
   npx tsx scripts/view-card.ts 2 --contract 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9
   TOKEN_ID=1 npx hardhat run scripts/view-card.ts --network localhost
 `);

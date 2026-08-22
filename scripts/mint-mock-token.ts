@@ -486,7 +486,7 @@ HoloFi Protocol - Mock ERC20 Token Minting & Balance CLI
 Mint test/mock ERC20 tokens (e.g. EURC) to any address or inspect balances.
 
 Usage:
-  npm run mint-mock-token [action] <recipient_address> [amount] [token_address] [options]
+  npm run mint-mock-token -- [action] <recipient_address> [amount] [token_address] [options]
   # or
   npx tsx scripts/mint-mock-token.ts [action] <recipient_address> [amount] [token_address] [options]
   # or with Hardhat run:
@@ -504,7 +504,7 @@ Positional Arguments:
 Options:
   --token, -t <addr>      Specify MockERC20 contract address
   --amount, -a <amt>      Specify token amount to mint
-  --network, -n <net>     Target network (e.g. localhost, sepolia, mainnet). Default: localhost
+  --network, -n <net>     Target network (e.g. localhost, baseSepolia, sepolia, mainnet). Default: localhost
   --help, -h              Show this help message
 
 Environment Variables:
@@ -518,6 +518,8 @@ Examples:
   npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 50000
   npm run mint-mock-token mint 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 2500
   npm run mint-mock-token balance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  npm run mint-mock-token -- 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 10000 --network baseSepolia
+  npx tsx scripts/mint-mock-token.ts 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 10000 --network baseSepolia
   npm run mint-mock-token 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --network sepolia
 `);
 }

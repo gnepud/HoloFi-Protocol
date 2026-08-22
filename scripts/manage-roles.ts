@@ -470,11 +470,15 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
         result.help = true;
         continue;
       }
-      if (arg === "--network" && i + 1 < argv.length) {
+      if ((arg === "--network" || arg === "-n") && i + 1 < argv.length) {
         result.networkName = argv[++i];
         continue;
       }
       if (arg.startsWith("--network=")) {
+        result.networkName = arg.split("=")[1];
+        continue;
+      }
+      if (arg.startsWith("-n=")) {
         result.networkName = arg.split("=")[1];
         continue;
       }
@@ -501,9 +505,11 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
     const token = tokens[i];
     if (token === "--help" || token === "-h" || token === "help") {
       result.help = true;
-    } else if (token === "--network" && i + 1 < tokens.length) {
+    } else if ((token === "--network" || token === "-n") && i + 1 < tokens.length) {
       result.networkName = tokens[++i];
     } else if (token.startsWith("--network=")) {
+      result.networkName = token.split("=")[1];
+    } else if (token.startsWith("-n=")) {
       result.networkName = token.split("=")[1];
     } else if (token === "--acm" && i + 1 < tokens.length) {
       result.acmAddress = tokens[++i];
@@ -603,7 +609,7 @@ HoloFi Protocol - Role & KYC/KYB Permissions Management CLI
 ============================================================
 
 Usage:
-  npm run roles <action> <target_address> [role_name | status] [acm_address] [--network <network>]
+  npm run roles -- <action> <target_address> [role_name | status] [acm_address] [--network <network>]
   # or
   npx tsx scripts/manage-roles.ts <action> <target_address> [role_name | status] [acm_address] [--network <network>]
   # or with Hardhat run:
@@ -635,7 +641,8 @@ Examples:
   npm run roles revoke 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 minter
   npm run roles kyb 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 approve
   npm run roles kyc 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 reject
-  npm run roles check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --network sepolia
+  npm run roles -- check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --network baseSepolia
+  npx tsx scripts/manage-roles.ts check 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --network baseSepolia
 `);
 }
 
