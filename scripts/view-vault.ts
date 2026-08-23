@@ -610,11 +610,20 @@ export async function fetchVaultDetails(
     }) + " EUR";
 
   // - LoanCore amounts (debt, capacity) are in underlying asset decimals
-  const formatAsset = (val: bigint) =>
-    Number(ethers.formatUnits(val, assetDecimals)).toLocaleString("en-US", {
+  const formatAsset = (val: bigint) => {
+    if (val === 0n) {
+      return `0.00 ${assetSymbol}`;
+    }
+    const num = Number(ethers.formatUnits(val, assetDecimals));
+    const formatted = num.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }) + " " + assetSymbol;
+    });
+    if (formatted === "0.00") {
+      return `< 0.01 ${assetSymbol} (${val.toString()} base units)`;
+    }
+    return `${formatted} ${assetSymbol}`;
+  };
 
   const maxBorrowCapacityFormatted = formatAsset(maxBorrowCapacityRaw);
   const principalDebtFormatted = formatAsset(principalDebtRaw);
