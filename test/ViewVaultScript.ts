@@ -149,6 +149,22 @@ describe("ViewVault CLI Script Integration Tests", function () {
       }
     });
 
+    it("Should resolve from networkName mapping (e.g. baseSepolia) even if provider fails", async function () {
+      const failingProvider = {
+        getNetwork: async () => {
+          throw new Error("RPC unreachable");
+        },
+      } as any;
+
+      const resolved = await resolveLoanCoreAddress(
+        failingProvider,
+        process.cwd(),
+        undefined,
+        "baseSepolia"
+      );
+      expect(resolved).to.equal("0x20fEeDf9b0A4fd00b0B383Aa7639C310335B95Bc");
+    });
+
     it("Should throw error if address cannot be resolved", async function () {
       const origEnv1 = process.env.LOAN_CORE_ADDRESS;
       const origEnv2 = process.env.VAULT_LOAN_CORE_ADDRESS;

@@ -158,9 +158,10 @@ export function parseBooleanStatus(input: string): boolean {
  * 3. Ignition deployment files
  */
 export async function resolveAcmAddress(
-  provider: ethers.Provider,
+  provider?: ethers.Provider,
   cliAcmAddress?: string,
-  projectRoot: string = process.cwd()
+  projectRoot: string = process.cwd(),
+  networkName?: string
 ): Promise<string> {
   if (cliAcmAddress && ethers.isAddress(cliAcmAddress)) {
     return ethers.getAddress(cliAcmAddress);
@@ -177,32 +178,59 @@ export async function resolveAcmAddress(
     return ethers.getAddress(process.env.ACCESS_CONTROL_MANAGER_ADDRESS);
   }
 
-  // Check Ignition deployments
-  try {
-    const networkInfo = await provider.getNetwork();
-    const chainId = networkInfo.chainId.toString();
+  let chainId: string | null = null;
+  if (provider && typeof provider.getNetwork === "function") {
+    try {
+      const networkInfo = await provider.getNetwork();
+      chainId = networkInfo.chainId.toString();
+    } catch {
+      // Ignore RPC getNetwork failure and fallback to networkName mapping or file scan
+    }
+  }
 
-    // 1. Check exact chain deployment file
+  if (!chainId && networkName) {
+    const knownNetworks: Record<string, string> = {
+      baseSepolia: "84532",
+      basesepolia: "84532",
+      baseMainnet: "8453",
+      basemainnet: "8453",
+      base: "8453",
+      sepolia: "11155111",
+      mainnet: "1",
+      localhost: "31337",
+      hardhat: "31337",
+    };
+    if (knownNetworks[networkName]) {
+      chainId = knownNetworks[networkName];
+    }
+  }
+
+  // 1. Check exact chain deployment file if chainId is known
+  if (chainId) {
     const chainDeploymentPath = path.resolve(
       projectRoot,
       `ignition/deployments/chain-${chainId}/deployed_addresses.json`
     );
     if (fs.existsSync(chainDeploymentPath)) {
-      const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
-      for (const [key, addr] of Object.entries(data)) {
-        if (
-          key.includes("AccessControlManager") &&
-          typeof addr === "string" &&
-          ethers.isAddress(addr)
-        ) {
-          return ethers.getAddress(addr);
+      try {
+        const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
+        for (const [key, addr] of Object.entries(data)) {
+          if (
+            key.includes("AccessControlManager") &&
+            typeof addr === "string" &&
+            ethers.isAddress(addr)
+          ) {
+            return ethers.getAddress(addr);
+          }
         }
-      }
+      } catch {}
     }
+  }
 
-    // 2. Search all ignition deployments directories
-    const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
-    if (fs.existsSync(deploymentsDir)) {
+  // 2. Search all ignition deployments directories
+  const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
+  if (fs.existsSync(deploymentsDir)) {
+    try {
       const entries = fs.readdirSync(deploymentsDir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory()) {
@@ -221,11 +249,13 @@ export async function resolveAcmAddress(
           }
         }
       }
-    }
+    } catch {}
+  }
 
-    // 3. Search root deployed_addresses.json
-    const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
-    if (fs.existsSync(rootDeployed)) {
+  // 3. Search root deployed_addresses.json
+  const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
+  if (fs.existsSync(rootDeployed)) {
+    try {
       const data = JSON.parse(fs.readFileSync(rootDeployed, "utf-8"));
       for (const [key, addr] of Object.entries(data)) {
         if (
@@ -236,9 +266,7 @@ export async function resolveAcmAddress(
           return ethers.getAddress(addr);
         }
       }
-    }
-  } catch {
-    // Continue to error throw
+    } catch {}
   }
 
   throw new Error(
@@ -671,7 +699,7 @@ export async function main(): Promise<void> {
   const { ethers: hhEthers } = connection;
   const signers = await hhEthers.getSigners();
   const signer = signers.length > 0 ? signers[0] : null;
-  const provider = signer ? signer.provider : hhEthers.provider;
+  const provider = hhEthers.provider;
 
   if (!provider) {
     throw new Error(`Unable to establish provider connection to network "${targetNetwork}".`);
@@ -683,7 +711,7 @@ export async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const acmAddress = await resolveAcmAddress(provider, args.acmAddress);
+  const acmAddress = await resolveAcmAddress(provider, args.acmAddress, process.cwd(), targetNetwork);
 
   // Validate contract bytecode existence
   const code = await provider.getCode(acmAddress);

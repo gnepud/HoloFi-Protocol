@@ -298,6 +298,17 @@ describe("ManageRoles CLI Script Integration Tests", function () {
       }
     });
 
+    it("Should resolve from networkName mapping (e.g. baseSepolia) even if provider fails", async function () {
+      const failingProvider = {
+        getNetwork: async () => {
+          throw new Error("RPC unreachable");
+        },
+      } as any;
+
+      const resolved = await resolveAcmAddress(failingProvider, undefined, process.cwd(), "baseSepolia");
+      expect(resolved).to.equal("0xde63B0aabF749837B9BA2537A1B6385d87777691");
+    });
+
     it("Should throw error if ACM address cannot be resolved", async function () {
       const savedAcm = process.env.ACM_ADDRESS;
       const savedAcmMgr = process.env.ACCESS_CONTROL_MANAGER_ADDRESS;

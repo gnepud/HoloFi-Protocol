@@ -448,6 +448,22 @@ describe("MintMockToken CLI Script Integration Tests", function () {
       }
     });
 
+    it("Should resolve from networkName mapping (e.g. baseSepolia) even if provider fails", async function () {
+      const failingProvider = {
+        getNetwork: async () => {
+          throw new Error("RPC unreachable");
+        },
+      } as any;
+
+      const resolved = await resolveMockTokenAddress(
+        failingProvider,
+        undefined,
+        process.cwd(),
+        "baseSepolia"
+      );
+      expect(resolved).to.equal("0xa59c4194a02f5EDfCE72b567aeB5B7Df252961CF");
+    });
+
     it("Should throw descriptive error if address cannot be resolved", async function () {
       const saved1 = process.env.MOCK_ERC20_ADDRESS;
       const saved2 = process.env.TOKEN_ADDRESS;

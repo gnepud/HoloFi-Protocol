@@ -231,9 +231,10 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
  * 3. Ignition deployment files
  */
 export async function resolveLoanCoreAddress(
-  provider: ethers.Provider,
+  provider?: ethers.Provider,
   projectRoot: string = process.cwd(),
-  cliAddress?: string
+  cliAddress?: string,
+  networkName?: string
 ): Promise<string> {
   if (cliAddress && ethers.isAddress(cliAddress)) {
     return ethers.getAddress(cliAddress);
@@ -260,12 +261,35 @@ export async function resolveLoanCoreAddress(
     return ethers.getAddress(process.env.CONTRACT_ADDRESS);
   }
 
-  // Check Ignition deployments
-  try {
-    const networkInfo = await provider.getNetwork();
-    const chainId = networkInfo.chainId.toString();
+  let chainId: string | null = null;
+  if (provider && typeof provider.getNetwork === "function") {
+    try {
+      const networkInfo = await provider.getNetwork();
+      chainId = networkInfo.chainId.toString();
+    } catch {
+      // Ignore RPC failure
+    }
+  }
 
-    // 1. Search chain-specific deployed_addresses.json
+  if (!chainId && networkName) {
+    const knownNetworks: Record<string, string> = {
+      baseSepolia: "84532",
+      basesepolia: "84532",
+      baseMainnet: "8453",
+      basemainnet: "8453",
+      base: "8453",
+      sepolia: "11155111",
+      mainnet: "1",
+      localhost: "31337",
+      hardhat: "31337",
+    };
+    if (knownNetworks[networkName]) {
+      chainId = knownNetworks[networkName];
+    }
+  }
+
+  // 1. Search chain-specific deployed_addresses.json
+  if (chainId) {
     const chainDeployedPath = path.resolve(
       projectRoot,
       "ignition",
@@ -275,24 +299,28 @@ export async function resolveLoanCoreAddress(
     );
 
     if (fs.existsSync(chainDeployedPath)) {
-      const data = JSON.parse(fs.readFileSync(chainDeployedPath, "utf-8"));
-      for (const [key, addr] of Object.entries(data)) {
-        if (
-          (key === "DeployHoloFiProtocol#HoloFiVaultLoanCore" ||
-            key === "HoloFiVaultLoanCore" ||
-            key.includes("HoloFiVaultLoanCore") ||
-            key.includes("LoanCore")) &&
-          typeof addr === "string" &&
-          ethers.isAddress(addr)
-        ) {
-          return ethers.getAddress(addr);
+      try {
+        const data = JSON.parse(fs.readFileSync(chainDeployedPath, "utf-8"));
+        for (const [key, addr] of Object.entries(data)) {
+          if (
+            (key === "DeployHoloFiProtocol#HoloFiVaultLoanCore" ||
+              key === "HoloFiVaultLoanCore" ||
+              key.includes("HoloFiVaultLoanCore") ||
+              key.includes("LoanCore")) &&
+            typeof addr === "string" &&
+            ethers.isAddress(addr)
+          ) {
+            return ethers.getAddress(addr);
+          }
         }
-      }
+      } catch {}
     }
+  }
 
-    // 2. Search any ignition deployment directory
-    const ignitionDeploymentsDir = path.resolve(projectRoot, "ignition", "deployments");
-    if (fs.existsSync(ignitionDeploymentsDir)) {
+  // 2. Search any ignition deployment directory
+  const ignitionDeploymentsDir = path.resolve(projectRoot, "ignition", "deployments");
+  if (fs.existsSync(ignitionDeploymentsDir)) {
+    try {
       const subdirs = fs.readdirSync(ignitionDeploymentsDir);
       for (const subdir of subdirs) {
         const deployedFile = path.join(ignitionDeploymentsDir, subdir, "deployed_addresses.json");
@@ -312,11 +340,13 @@ export async function resolveLoanCoreAddress(
           }
         }
       }
-    }
+    } catch {}
+  }
 
-    // 3. Search root deployed_addresses.json
-    const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
-    if (fs.existsSync(rootDeployed)) {
+  // 3. Search root deployed_addresses.json
+  const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
+  if (fs.existsSync(rootDeployed)) {
+    try {
       const data = JSON.parse(fs.readFileSync(rootDeployed, "utf-8"));
       for (const [key, addr] of Object.entries(data)) {
         if (
@@ -330,13 +360,11 @@ export async function resolveLoanCoreAddress(
           return ethers.getAddress(addr);
         }
       }
-    }
-  } catch {
-    // Continue to error throw
+    } catch {}
   }
 
   throw new Error(
-    "Could not resolve HoloFiVaultLoanCore contract address. Please provide it as a CLI argument, set LOAN_CORE_ADDRESS in your environment, or deploy the protocol via Ignition."
+    "Could not resolve HoloFiVaultLoanCore contract address. Please provide it as an argument, set LOAN_CORE_ADDRESS environment variable, or deploy the protocol via Ignition."
   );
 }
 
@@ -784,17 +812,22 @@ export async function main(): Promise<void> {
 
   let provider: ethers.Provider;
   try {
-    const hardhatNetwork = await network.create(targetNetwork);
-    provider = hardhatNetwork.ethers.provider;
+    const connection = await network.connect({ network: targetNetwork });
+    provider = connection.ethers.provider;
   } catch {
-    provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "http://127.0.0.1:8545");
+    try {
+      const hardhatNetwork = await network.create(targetNetwork);
+      provider = hardhatNetwork.ethers.provider;
+    } catch {
+      provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "http://127.0.0.1:8545");
+    }
   }
 
   const projectRoot = process.cwd();
   let loanCoreAddress: string;
 
   try {
-    loanCoreAddress = await resolveLoanCoreAddress(provider, projectRoot, args.loanCoreAddress);
+    loanCoreAddress = await resolveLoanCoreAddress(provider, projectRoot, args.loanCoreAddress, targetNetwork);
   } catch (err: any) {
     console.error(`[ERROR] ${err.message}`);
     process.exit(1);

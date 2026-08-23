@@ -322,6 +322,22 @@ describe("ViewCard CLI Script Integration Tests", function () {
       }
     });
 
+    it("Should resolve from networkName mapping (e.g. baseSepolia) even if provider fails", async function () {
+      const failingProvider = {
+        getNetwork: async () => {
+          throw new Error("RPC unreachable");
+        },
+      } as any;
+
+      const resolved = await resolveVaultCardAddress(
+        failingProvider,
+        undefined,
+        process.cwd(),
+        "baseSepolia"
+      );
+      expect(resolved).to.equal("0xC69CD882EEDE3802cEAcdbde965F3b18de9d223F");
+    });
+
     it("Should throw error if address cannot be resolved", async function () {
       const savedCard = process.env.VAULT_CARD_ADDRESS;
       const savedCard2 = process.env.CARD_ADDRESS;
@@ -363,6 +379,22 @@ describe("ViewCard CLI Script Integration Tests", function () {
       } finally {
         delete process.env.PRICE_FEED_ADDRESS;
       }
+    });
+
+    it("Should resolve from networkName mapping (e.g. baseSepolia)", async function () {
+      const failingProvider = {
+        getNetwork: async () => {
+          throw new Error("RPC unreachable");
+        },
+      } as any;
+
+      const resolved = await resolvePriceFeedAddress(
+        failingProvider,
+        process.cwd(),
+        undefined,
+        "baseSepolia"
+      );
+      expect(resolved).to.equal("0xcdF24c4DAB40F9bB4864bF115AcF751df8238e40");
     });
 
     it("Should return null when price feed cannot be resolved", async function () {
@@ -415,6 +447,22 @@ describe("ViewCard CLI Script Integration Tests", function () {
       } finally {
         delete process.env.VAULT_LOAN_CORE_ADDRESS;
       }
+    });
+
+    it("Should resolve from networkName mapping (e.g. baseSepolia)", async function () {
+      const failingProvider = {
+        getNetwork: async () => {
+          throw new Error("RPC unreachable");
+        },
+      } as any;
+
+      const resolved = await resolveLoanCoreAddress(
+        failingProvider,
+        process.cwd(),
+        undefined,
+        "baseSepolia"
+      );
+      expect(resolved).to.equal("0x20fEeDf9b0A4fd00b0B383Aa7639C310335B95Bc");
     });
 
     it("Should return null when loan core cannot be resolved", async function () {

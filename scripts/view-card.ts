@@ -276,9 +276,10 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedCliArgs {
  * 3. Ignition deployment files
  */
 export async function resolveVaultCardAddress(
-  provider: ethers.Provider,
+  provider?: ethers.Provider,
   cliAddress?: string,
-  projectRoot: string = process.cwd()
+  projectRoot: string = process.cwd(),
+  networkName?: string
 ): Promise<string> {
   if (cliAddress && ethers.isAddress(cliAddress)) {
     return ethers.getAddress(cliAddress);
@@ -302,35 +303,62 @@ export async function resolveVaultCardAddress(
     return ethers.getAddress(process.env.CONTRACT_ADDRESS);
   }
 
-  // Check Ignition deployments
-  try {
-    const networkInfo = await provider.getNetwork();
-    const chainId = networkInfo.chainId.toString();
+  let chainId: string | null = null;
+  if (provider && typeof provider.getNetwork === "function") {
+    try {
+      const networkInfo = await provider.getNetwork();
+      chainId = networkInfo.chainId.toString();
+    } catch {
+      // Ignore RPC failure and fallback
+    }
+  }
 
-    // 1. Check exact chain deployment file
+  if (!chainId && networkName) {
+    const knownNetworks: Record<string, string> = {
+      baseSepolia: "84532",
+      basesepolia: "84532",
+      baseMainnet: "8453",
+      basemainnet: "8453",
+      base: "8453",
+      sepolia: "11155111",
+      mainnet: "1",
+      localhost: "31337",
+      hardhat: "31337",
+    };
+    if (knownNetworks[networkName]) {
+      chainId = knownNetworks[networkName];
+    }
+  }
+
+  // 1. Check exact chain deployment file
+  if (chainId) {
     const chainDeploymentPath = path.resolve(
       projectRoot,
       `ignition/deployments/chain-${chainId}/deployed_addresses.json`
     );
     if (fs.existsSync(chainDeploymentPath)) {
-      const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
-      for (const [key, addr] of Object.entries(data)) {
-        if (
-          (key === "DeployHoloFiProtocol#HoloFiVaultCard" ||
-            key === "HoloFiVaultCard" ||
-            key.includes("HoloFiVaultCard") ||
-            key.includes("VaultCard")) &&
-          typeof addr === "string" &&
-          ethers.isAddress(addr)
-        ) {
-          return ethers.getAddress(addr);
+      try {
+        const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
+        for (const [key, addr] of Object.entries(data)) {
+          if (
+            (key === "DeployHoloFiProtocol#HoloFiVaultCard" ||
+              key === "HoloFiVaultCard" ||
+              key.includes("HoloFiVaultCard") ||
+              key.includes("VaultCard")) &&
+            typeof addr === "string" &&
+            ethers.isAddress(addr)
+          ) {
+            return ethers.getAddress(addr);
+          }
         }
-      }
+      } catch {}
     }
+  }
 
-    // 2. Search all ignition deployments directories
-    const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
-    if (fs.existsSync(deploymentsDir)) {
+  // 2. Search all ignition deployments directories
+  const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
+  if (fs.existsSync(deploymentsDir)) {
+    try {
       const entries = fs.readdirSync(deploymentsDir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory()) {
@@ -356,11 +384,13 @@ export async function resolveVaultCardAddress(
           }
         }
       }
-    }
+    } catch {}
+  }
 
-    // 3. Search root deployed_addresses.json
-    const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
-    if (fs.existsSync(rootDeployed)) {
+  // 3. Search root deployed_addresses.json
+  const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
+  if (fs.existsSync(rootDeployed)) {
+    try {
       const data = JSON.parse(fs.readFileSync(rootDeployed, "utf-8"));
       for (const [key, addr] of Object.entries(data)) {
         if (
@@ -374,9 +404,7 @@ export async function resolveVaultCardAddress(
           return ethers.getAddress(addr);
         }
       }
-    }
-  } catch {
-    // Continue to error throw
+    } catch {}
   }
 
   throw new Error(
@@ -391,9 +419,10 @@ export async function resolveVaultCardAddress(
  * 3. Ignition deployment files
  */
 export async function resolvePriceFeedAddress(
-  provider: ethers.Provider,
+  provider?: ethers.Provider,
   projectRoot: string = process.cwd(),
-  cliAddress?: string
+  cliAddress?: string,
+  networkName?: string
 ): Promise<string | null> {
   if (cliAddress && ethers.isAddress(cliAddress)) {
     return ethers.getAddress(cliAddress);
@@ -413,35 +442,62 @@ export async function resolvePriceFeedAddress(
     return ethers.getAddress(process.env.FEED_ADDRESS);
   }
 
-  // Check Ignition deployments
-  try {
-    const networkInfo = await provider.getNetwork();
-    const chainId = networkInfo.chainId.toString();
+  let chainId: string | null = null;
+  if (provider && typeof provider.getNetwork === "function") {
+    try {
+      const networkInfo = await provider.getNetwork();
+      chainId = networkInfo.chainId.toString();
+    } catch {
+      // Ignore RPC failure
+    }
+  }
 
-    // 1. Check exact chain deployment file
+  if (!chainId && networkName) {
+    const knownNetworks: Record<string, string> = {
+      baseSepolia: "84532",
+      basesepolia: "84532",
+      baseMainnet: "8453",
+      basemainnet: "8453",
+      base: "8453",
+      sepolia: "11155111",
+      mainnet: "1",
+      localhost: "31337",
+      hardhat: "31337",
+    };
+    if (knownNetworks[networkName]) {
+      chainId = knownNetworks[networkName];
+    }
+  }
+
+  // 1. Check exact chain deployment file
+  if (chainId) {
     const chainDeploymentPath = path.resolve(
       projectRoot,
       `ignition/deployments/chain-${chainId}/deployed_addresses.json`
     );
     if (fs.existsSync(chainDeploymentPath)) {
-      const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
-      for (const [key, addr] of Object.entries(data)) {
-        if (
-          (key === "DeployHoloFiProtocol#HoloFiCardPriceFeed" ||
-            key === "HoloFiCardPriceFeed" ||
-            key.includes("HoloFiCardPriceFeed") ||
-            key.includes("CardPriceFeed")) &&
-          typeof addr === "string" &&
-          ethers.isAddress(addr)
-        ) {
-          return ethers.getAddress(addr);
+      try {
+        const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
+        for (const [key, addr] of Object.entries(data)) {
+          if (
+            (key === "DeployHoloFiProtocol#HoloFiCardPriceFeed" ||
+              key === "HoloFiCardPriceFeed" ||
+              key.includes("HoloFiCardPriceFeed") ||
+              key.includes("CardPriceFeed")) &&
+            typeof addr === "string" &&
+            ethers.isAddress(addr)
+          ) {
+            return ethers.getAddress(addr);
+          }
         }
-      }
+      } catch {}
     }
+  }
 
-    // 2. Search all ignition deployments directories
-    const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
-    if (fs.existsSync(deploymentsDir)) {
+  // 2. Search all ignition deployments directories
+  const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
+  if (fs.existsSync(deploymentsDir)) {
+    try {
       const entries = fs.readdirSync(deploymentsDir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory()) {
@@ -467,11 +523,13 @@ export async function resolvePriceFeedAddress(
           }
         }
       }
-    }
+    } catch {}
+  }
 
-    // 3. Search root deployed_addresses.json
-    const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
-    if (fs.existsSync(rootDeployed)) {
+  // 3. Search root deployed_addresses.json
+  const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
+  if (fs.existsSync(rootDeployed)) {
+    try {
       const data = JSON.parse(fs.readFileSync(rootDeployed, "utf-8"));
       for (const [key, addr] of Object.entries(data)) {
         if (
@@ -485,9 +543,7 @@ export async function resolvePriceFeedAddress(
           return ethers.getAddress(addr);
         }
       }
-    }
-  } catch {
-    // Continue to return null
+    } catch {}
   }
 
   return null;
@@ -500,9 +556,10 @@ export async function resolvePriceFeedAddress(
  * 3. Ignition deployment files
  */
 export async function resolveLoanCoreAddress(
-  provider: ethers.Provider,
+  provider?: ethers.Provider,
   projectRoot: string = process.cwd(),
-  cliAddress?: string
+  cliAddress?: string,
+  networkName?: string
 ): Promise<string | null> {
   if (cliAddress && ethers.isAddress(cliAddress)) {
     return ethers.getAddress(cliAddress);
@@ -522,36 +579,63 @@ export async function resolveLoanCoreAddress(
     return ethers.getAddress(process.env.VAULT_LOAN_CORE_ADDRESS);
   }
 
-  // Check Ignition deployments
-  try {
-    const networkInfo = await provider.getNetwork();
-    const chainId = networkInfo.chainId.toString();
+  let chainId: string | null = null;
+  if (provider && typeof provider.getNetwork === "function") {
+    try {
+      const networkInfo = await provider.getNetwork();
+      chainId = networkInfo.chainId.toString();
+    } catch {
+      // Ignore RPC failure
+    }
+  }
 
-    // 1. Check exact chain deployment file
+  if (!chainId && networkName) {
+    const knownNetworks: Record<string, string> = {
+      baseSepolia: "84532",
+      basesepolia: "84532",
+      baseMainnet: "8453",
+      basemainnet: "8453",
+      base: "8453",
+      sepolia: "11155111",
+      mainnet: "1",
+      localhost: "31337",
+      hardhat: "31337",
+    };
+    if (knownNetworks[networkName]) {
+      chainId = knownNetworks[networkName];
+    }
+  }
+
+  // 1. Check exact chain deployment file
+  if (chainId) {
     const chainDeploymentPath = path.resolve(
       projectRoot,
       `ignition/deployments/chain-${chainId}/deployed_addresses.json`
     );
     if (fs.existsSync(chainDeploymentPath)) {
-      const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
-      for (const [key, addr] of Object.entries(data)) {
-        if (
-          (key === "DeployHoloFiProtocol#HoloFiVaultLoanCore" ||
-            key === "HoloFiVaultLoanCore" ||
-            key.includes("HoloFiVaultLoanCore") ||
-            key.includes("VaultLoanCore") ||
-            key.includes("LoanCore")) &&
-          typeof addr === "string" &&
-          ethers.isAddress(addr)
-        ) {
-          return ethers.getAddress(addr);
+      try {
+        const data = JSON.parse(fs.readFileSync(chainDeploymentPath, "utf-8"));
+        for (const [key, addr] of Object.entries(data)) {
+          if (
+            (key === "DeployHoloFiProtocol#HoloFiVaultLoanCore" ||
+              key === "HoloFiVaultLoanCore" ||
+              key.includes("HoloFiVaultLoanCore") ||
+              key.includes("VaultLoanCore") ||
+              key.includes("LoanCore")) &&
+            typeof addr === "string" &&
+            ethers.isAddress(addr)
+          ) {
+            return ethers.getAddress(addr);
+          }
         }
-      }
+      } catch {}
     }
+  }
 
-    // 2. Search all ignition deployments directories
-    const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
-    if (fs.existsSync(deploymentsDir)) {
+  // 2. Search all ignition deployments directories
+  const deploymentsDir = path.resolve(projectRoot, "ignition/deployments");
+  if (fs.existsSync(deploymentsDir)) {
+    try {
       const entries = fs.readdirSync(deploymentsDir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory()) {
@@ -578,11 +662,13 @@ export async function resolveLoanCoreAddress(
           }
         }
       }
-    }
+    } catch {}
+  }
 
-    // 3. Search root deployed_addresses.json
-    const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
-    if (fs.existsSync(rootDeployed)) {
+  // 3. Search root deployed_addresses.json
+  const rootDeployed = path.resolve(projectRoot, "deployed_addresses.json");
+  if (fs.existsSync(rootDeployed)) {
+    try {
       const data = JSON.parse(fs.readFileSync(rootDeployed, "utf-8"));
       for (const [key, addr] of Object.entries(data)) {
         if (
@@ -597,9 +683,7 @@ export async function resolveLoanCoreAddress(
           return ethers.getAddress(addr);
         }
       }
-    }
-  } catch {
-    // Continue to return null
+    } catch {}
   }
 
   return null;
@@ -881,7 +965,7 @@ export async function main(): Promise<void> {
   const { ethers: hhEthers } = connection;
   const signers = await hhEthers.getSigners();
   const signer = signers.length > 0 ? signers[0] : null;
-  const provider = signer ? signer.provider : hhEthers.provider;
+  const provider = hhEthers.provider;
 
   if (!provider) {
     throw new Error(
@@ -891,7 +975,9 @@ export async function main(): Promise<void> {
 
   const vaultCardAddress = await resolveVaultCardAddress(
     provider,
-    args.vaultCardAddress
+    args.vaultCardAddress,
+    process.cwd(),
+    targetNetwork
   );
 
   // Validate contract bytecode existence
@@ -909,13 +995,15 @@ export async function main(): Promise<void> {
   const priceFeedAddress = await resolvePriceFeedAddress(
     provider,
     process.cwd(),
-    args.priceFeedAddress
+    args.priceFeedAddress,
+    targetNetwork
   );
 
   const loanCoreAddress = await resolveLoanCoreAddress(
     provider,
     process.cwd(),
-    args.loanCoreAddress
+    args.loanCoreAddress,
+    targetNetwork
   );
 
   const vaultCard = new ethers.Contract(
