@@ -1,0 +1,13 @@
+{
+  "DeployHoloFiLendingPoolWithMock#MockERC20": "0xa59c4194a02f5EDfCE72b567aeB5B7Df252961CF",
+  "DeployHoloFiProtocol#AccessControlManager": "0xde63B0aabF749837B9BA2537A1B6385d87777691",
+  "DeployHoloFiProtocol#HoloFiCardPriceFeed": "0xcdF24c4DAB40F9bB4864bF115AcF751df8238e40",
+  "DeployHoloFiProtocol#HoloFiLendingPoolFactory": "0x8a0Af1A725E8358E0CD8243e5289fC4F8463c8EC",
+  "DeployHoloFiProtocol#HoloFiVaultCard": "0xC69CD882EEDE3802cEAcdbde965F3b18de9d223F",
+  "DeployHoloFiProtocol#HoloFiVaultLoanCore": "0x20fEeDf9b0A4fd00b0B383Aa7639C310335B95Bc",
+  "DeployHoloFiProtocol#HoloFiDutchAuction": "0x4459CB33DAcc90ef3563eE7249b77152Cf7FA3bF",
+  "DeployHoloFiLendingPoolWithMock#DeluxePoolGradeEligibilityPolicy": "0x15767f11c91689608d07274aeDE1699ABb8A1d19",
+  "DeployHoloFiLendingPoolWithMock#PremiumPoolGradeEligibilityPolicy": "0x2574f0a08017E9Bc09b2f9600548d57Dc2f119D1",
+  "DeployHoloFiLendingPoolWithMock#PremiumLendingPool": "0x12F5116414891F1526b4859a0a02db3b17BbA02E",
+  "DeployHoloFiLendingPoolWithMock#DeluxeLendingPool": "0x1CAbd4196598F3ac43e2272A0E9f54b6FFe38a31"
+}
