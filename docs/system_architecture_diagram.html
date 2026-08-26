@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HoloFi Protocol - Smart Contract System Architecture</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --background: #0b0f19;
+      --foreground: #f1f5f9;
+      --muted-foreground: #94a3b8;
+      --card: #111827;
+      --border: #1f2937;
+      --primary: #3b82f6;
+      --primary-foreground: #ffffff;
+      --secondary: #1f2937;
+      --secondary-foreground: #f8fafc;
+      --accent: #2563eb;
+    }
+    .light {
+      --background: #f8fafc;
+      --foreground: #0f172a;
+      --muted-foreground: #64748b;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+      --primary-foreground: #ffffff;
+      --secondary: #f1f5f9;
+      --secondary-foreground: #0f172a;
+      --accent: #3b82f6;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
+    .transition-all-200 { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+    .glow-active { box-shadow: 0 0 15px -3px var(--primary); }
+    .pulse-animation { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .6; } }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-4 md:p-6 select-none min-h-screen">
+  <!-- Main Container -->
+  <div class="max-w-7xl mx-auto space-y-6">
+
+    <!-- Header Section -->
+    <header class="bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] rounded-2xl p-6 shadow-sm relative overflow-hidden">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+        <div>
+          <div class="flex items-center gap-3">
+            <span class="inline-flex items-center justify-center p-2 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20 font-bold text-xl">
+              ⚡
+            </span>
+            <div>
+              <div class="flex items-center gap-2">
+                <h1 class="text-2xl font-bold tracking-tight">HoloFi Protocol Architecture</h1>
+                <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">V1 Smart Contracts</span>
+              </div>
+              <p class="text-[var(--muted-foreground)] text-sm mt-0.5">B2B Real-World Asset (RWA) TCG Physical Collateral Lending & Dutch Auction Protocol</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode / Tab Controls & Theme Toggle -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="flex flex-wrap items-center gap-1.5 bg-[var(--background)] p-1.5 rounded-xl border border-[var(--border)]">
+            <button onclick="switchTab('diagram')" id="tab-btn-diagram" class="tab-btn px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-[var(--card)] text-[var(--primary)] shadow-sm border border-[var(--border)] transition-all-200">
+              📊 System Diagram
+            </button>
+            <button onclick="switchTab('flows')" id="tab-btn-flows" class="tab-btn px-3.5 py-1.5 text-xs font-semibold rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-all-200">
+              🔀 Execution Flows
+            </button>
+            <button onclick="switchTab('contracts')" id="tab-btn-contracts" class="tab-btn px-3.5 py-1.5 text-xs font-semibold rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-all-200">
+              📜 Contract Matrix
+            </button>
+            <button onclick="switchTab('simulator')" id="tab-btn-simulator" class="tab-btn px-3.5 py-1.5 text-xs font-semibold rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-all-200">
+              🧮 Risk & Math Simulator
+            </button>
+          </div>
+          <button onclick="toggleTheme()" class="px-3 py-2 rounded-xl bg-[var(--card)] border border-[var(--border)] text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]" title="Toggle Theme">
+            🌓
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- TAB 1: SYSTEM ARCHITECTURE DIAGRAM -->
+    <div id="view-diagram" class="tab-view space-y-6">
+      
+      <!-- Interactive Filter Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-3 bg-[var(--card)] border border-[var(--border)] rounded-xl p-3.5 text-xs shadow-sm">
+        <div class="flex items-center gap-2">
+          <span class="text-[var(--muted-foreground)] font-medium">Highlight Layer:</span>
+          <button onclick="filterLayer('all')" class="layer-pill px-2.5 py-1 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] font-medium transition-all-200">All</button>
+          <button onclick="filterLayer('access')" class="layer-pill px-2.5 py-1 rounded-md bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)] hover:text-[var(--foreground)] transition-all-200">Access & Compliance</button>
+          <button onclick="filterLayer('nft-oracle')" class="layer-pill px-2.5 py-1 rounded-md bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)] hover:text-[var(--foreground)] transition-all-200">NFT & Price Oracle</button>
+          <button onclick="filterLayer('credit')" class="layer-pill px-2.5 py-1 rounded-md bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)] hover:text-[var(--foreground)] transition-all-200">Credit & Escrow Core</button>
+          <button onclick="filterLayer('liquidity')" class="layer-pill px-2.5 py-1 rounded-md bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)] hover:text-[var(--foreground)] transition-all-200">ERC-4626 Liquidity</button>
+          <button onclick="filterLayer('liquidation')" class="layer-pill px-2.5 py-1 rounded-md bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)] hover:text-[var(--foreground)] transition-all-200">Dutch Auction</button>
+        </div>
+        <div class="text-[var(--muted-foreground)] flex items-center gap-2">
+          <span>💡 Click any contract block to inspect functions, storage & invariants</span>
+        </div>
+      </div>
+
+      <!-- Main Visual Grid Architecture -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Interactive Canvas Area (Left 8-cols) -->
+        <div class="lg:col-span-8 space-y-6">
+          
+          <!-- LAYER 0: Off-Chain Physical Custody & Oracles -->
+          <div class="border border-dashed border-[var(--border)] bg-[var(--card)]/40 rounded-xl p-4 space-y-3">
+            <div class="flex items-center justify-between text-xs text-[var(--muted-foreground)] font-semibold tracking-wider uppercase">
+              <span>🌐 Off-Chain Logistics & Oracle Pipeline</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400">External Inputs</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-3 space-y-1">
+                <div class="font-bold flex items-center gap-1.5 text-amber-500">
+                  <span>🏢</span> Blink Vault Partner
+                </div>
+                <p class="text-[var(--muted-foreground)] text-[11px]">Physical card custody, authentication, grading & cert hash attestation.</p>
+              </div>
+              <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-3 space-y-1">
+                <div class="font-bold flex items-center gap-1.5 text-cyan-500">
+                  <span>📈</span> FMV Valuation Engine
+                </div>
+                <p class="text-[var(--muted-foreground)] text-[11px]">TCG market sales IQR filter + 90d VW-TWAP pricing submitted on-chain.</p>
+              </div>
+              <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-3 space-y-1">
+                <div class="font-bold flex items-center gap-1.5 text-purple-500">
+                  <span>🏪</span> KYB Whitelisted Stores
+                </div>
+                <p class="text-[var(--muted-foreground)] text-[11px]">Verified merchant wallets eligible for isolated credit vault operations.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- LAYER 1: Access Control & Governance -->
+          <div id="layer-access" class="contract-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm space-y-3 transition-all-200 hover:border-[var(--primary)] cursor-pointer" onclick="inspectContract('ACM')">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 text-xs font-mono font-bold rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">RBAC</span>
+                <h3 class="font-bold text-base">AccessControlManager</h3>
+              </div>
+              <span class="text-xs text-[var(--muted-foreground)] font-mono">contracts/AccessControlManager.sol</span>
+            </div>
+            <p class="text-xs text-[var(--muted-foreground)]">Protocol-wide centralized Role-Based Access Control registry and merchant KYB whitelist status manager.</p>
+            <div class="flex flex-wrap gap-1.5 text-[11px] font-mono">
+              <span class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-red-400">ADMIN_ROLE</span>
+              <span class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-blue-400">ORACLE_ROLE</span>
+              <span class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-emerald-400">KYB_MANAGER_ROLE</span>
+              <span class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-orange-400">PAUSER_ROLE</span>
+              <span class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-purple-400">MINTER_ROLE</span>
+              <span class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-pink-400">LOCKER_ROLE</span>
+            </div>
+          </div>
+
+          <!-- LAYER 2: NFT Registry, Price Feed & Policy Engine (2 Cols) -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
+            <!-- HoloFiVaultCard -->
+            <div id="layer-nft-oracle-card" class="contract-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm space-y-2.5 transition-all-200 hover:border-[var(--primary)] cursor-pointer" onclick="inspectContract('VaultCard')">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-purple-500/10 text-purple-500 border border-purple-500/20">ERC-721</span>
+                <span class="text-[10px] text-[var(--muted-foreground)] font-mono">URIStorage</span>
+              </div>
+              <h3 class="font-bold text-sm">HoloFiVaultCard</h3>
+              <p class="text-[11px] text-[var(--muted-foreground)]">Single global collection representing vaulted TCG cards. Supports collateral transfer locking (`isLocked`).</p>
+              <div class="text-[10px] font-mono bg-[var(--background)] p-2 rounded border border-[var(--border)] space-y-0.5">
+                <div>• mintCard() [MINTER]</div>
+                <div>• setCardLock() [LOCKER]</div>
+                <div>• burnCard() [Owner]</div>
+              </div>
+            </div>
+
+            <!-- HoloFiCardPriceFeed -->
+            <div id="layer-nft-oracle-feed" class="contract-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm space-y-2.5 transition-all-200 hover:border-[var(--primary)] cursor-pointer" onclick="inspectContract('PriceFeed')">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-cyan-500/10 text-cyan-500 border border-cyan-500/20">ORACLE</span>
+                <span class="text-[10px] text-[var(--muted-foreground)] font-mono">EnumerableSet</span>
+              </div>
+              <h3 class="font-bold text-sm">HoloFiCardPriceFeed</h3>
+              <p class="text-[11px] text-[var(--muted-foreground)]">Gas-optimized FMV price registry packed into 1 storage slot (128-bit USD + 128-bit timestamp).</p>
+              <div class="text-[10px] font-mono bg-[var(--background)] p-2 rounded border border-[var(--border)] space-y-0.5">
+                <div>• setPrice() [ORACLE]</div>
+                <div>• setBatchPrices()</div>
+                <div>• getPrice(cardTypeId)</div>
+              </div>
+            </div>
+
+            <!-- GradeEligibilityPolicy -->
+            <div id="layer-nft-oracle-policy" class="contract-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm space-y-2.5 transition-all-200 hover:border-[var(--primary)] cursor-pointer" onclick="inspectContract('Policy')">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">POLICY</span>
+                <span class="text-[10px] text-[var(--muted-foreground)] font-mono">ICardEligibility</span>
+              </div>
+              <h3 class="font-bold text-sm">GradeEligibilityPolicy</h3>
+              <p class="text-[11px] text-[var(--muted-foreground)]">Modular pool collateral filter enforcing grading companies (PSA/BGS) & grade ranges (&ge;10, &ge;9).</p>
+              <div class="text-[10px] font-mono bg-[var(--background)] p-2 rounded border border-[var(--border)] space-y-0.5">
+                <div>• registerCardType()</div>
+                <div>• isCardTypeEligible()</div>
+                <div>• parseGrade(gradeStr)</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- LAYER 3: Core Credit Manager & Escrow Engine (Central Hub) -->
+          <div id="layer-credit" class="contract-card bg-[var(--card)] border-2 border-blue-500/40 rounded-xl p-5 shadow-sm space-y-3 transition-all-200 hover:border-blue-500 cursor-pointer relative" onclick="inspectContract('LoanCore')">
+            <div class="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500 text-white shadow-sm">
+              Core Credit Engine
+            </div>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 text-xs font-mono font-bold rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">ESCROW & CREDIT</span>
+                <h3 class="font-bold text-lg">HoloFiVaultLoanCore</h3>
+              </div>
+              <span class="text-xs text-[var(--muted-foreground)] font-mono">IERC721Receiver • ReentrancyGuard</span>
+            </div>
+            <p class="text-xs text-[var(--muted-foreground)]">
+              Manages isolated CollateralVault instances for stores. Handles NFT custody escrow, continuous per-second interest accrual, LTV validation, draw requests, and liquidation triggers.
+            </p>
+            
+            <!-- Functional Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 text-xs">
+              <div class="bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <div class="text-[var(--muted-foreground)] text-[10px] uppercase font-bold">Escrow</div>
+                <div class="font-mono text-[11px] font-semibold mt-0.5 text-blue-400">depositCollateral()</div>
+                <div class="font-mono text-[11px] font-semibold text-blue-400">withdrawCollateral()</div>
+              </div>
+              <div class="bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <div class="text-[var(--muted-foreground)] text-[10px] uppercase font-bold">Credit</div>
+                <div class="font-mono text-[11px] font-semibold mt-0.5 text-emerald-400">borrow()</div>
+                <div class="font-mono text-[11px] font-semibold text-emerald-400">repayAndWithdraw()</div>
+              </div>
+              <div class="bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <div class="text-[var(--muted-foreground)] text-[10px] uppercase font-bold">Accounting</div>
+                <div class="font-mono text-[11px] font-semibold mt-0.5 text-purple-400">accrueInterest()</div>
+                <div class="font-mono text-[11px] font-semibold text-purple-400">getHealthFactor()</div>
+              </div>
+              <div class="bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <div class="text-[var(--muted-foreground)] text-[10px] uppercase font-bold">Liquidation</div>
+                <div class="font-mono text-[11px] font-semibold mt-0.5 text-rose-400">startLiquidation()</div>
+                <div class="font-mono text-[11px] font-semibold text-rose-400">finalizeLiquidation()</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LAYER 4: Multi-Asset Liquidity & Factory (2 Cols) -->
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+            
+            <!-- Factory -->
+            <div id="layer-liquidity-factory" class="md:col-span-5 contract-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm space-y-2.5 transition-all-200 hover:border-[var(--primary)] cursor-pointer" onclick="inspectContract('Factory')">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-teal-500/10 text-teal-500 border border-teal-500/20">FACTORY</span>
+                <span class="text-[10px] text-[var(--muted-foreground)] font-mono">Multi-Asset</span>
+              </div>
+              <h3 class="font-bold text-sm">HoloFiLendingPoolFactory</h3>
+              <p class="text-[11px] text-[var(--muted-foreground)]">Deploys and registers isolated ERC-4626 pools with customized risk parameters per asset.</p>
+              <div class="text-[10px] font-mono bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <div>• createPool(asset, name, symbol, ...)</div>
+                <div>• isValidPool(address) => bool</div>
+              </div>
+            </div>
+
+            <!-- LendingPool -->
+            <div id="layer-liquidity-pool" class="md:col-span-7 contract-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm space-y-2.5 transition-all-200 hover:border-[var(--primary)] cursor-pointer" onclick="inspectContract('Pool')">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">ERC-4626</span>
+                <span class="text-[10px] text-[var(--muted-foreground)] font-mono">pToken Shares</span>
+              </div>
+              <h3 class="font-bold text-sm">HoloFiLendingPool</h3>
+              <p class="text-[11px] text-[var(--muted-foreground)]">Permissioned liquidity vault. Enforces non-transferable shares, 3-decimal inflation offset, and pool-level risk caps.</p>
+              <div class="grid grid-cols-2 gap-2 text-[10px] font-mono bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <div>• drawLiquidity() [LoanCore]</div>
+                <div>• returnLiquidity() [Core/Auc]</div>
+                <div>• maxLtvBps / ltBps</div>
+                <div>• borrowRateBpsPerYear</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- LAYER 5: Dutch Auction Liquidation Engine -->
+          <div id="layer-liquidation" class="contract-card bg-[var(--card)] border border-rose-500/30 rounded-xl p-4 shadow-sm space-y-3 transition-all-200 hover:border-rose-500 cursor-pointer" onclick="inspectContract('DutchAuction')">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 text-xs font-mono font-bold rounded bg-rose-500/10 text-rose-500 border border-rose-500/20">AUCTION</span>
+                <h3 class="font-bold text-base">HoloFiDutchAuction</h3>
+              </div>
+              <span class="text-xs text-[var(--muted-foreground)] font-mono">48h Linear Decay • Surplus Waterfall</span>
+            </div>
+            <p class="text-xs text-[var(--muted-foreground)]">
+              Automated liquidation engine triggered when $HF < 1.0$. Price decays linearly from 120% FMV to Reserve Price (Debt + Penalty). Supports liquidator settlement and Treasury backstop buyback.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs font-mono">
+              <div class="bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <span class="text-rose-400 font-bold">1. startAuction()</span>
+                <p class="text-[10px] text-[var(--muted-foreground)] mt-0.5">Locks vault, fixes 120% start & reserve price.</p>
+              </div>
+              <div class="bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <span class="text-emerald-400 font-bold">2. settleAuction()</span>
+                <p class="text-[10px] text-[var(--muted-foreground)] mt-0.5">Liquidator pays clearing price; surplus goes to store.</p>
+              </div>
+              <div class="bg-[var(--background)] p-2 rounded border border-[var(--border)]">
+                <span class="text-purple-400 font-bold">3. treasuryBuyback()</span>
+                <p class="text-[10px] text-[var(--muted-foreground)] mt-0.5">Protocol backstop if expired after 48 hours.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Detail Inspector Sidebar (Right 4-cols) -->
+        <div class="lg:col-span-4 space-y-4 sticky top-6">
+          <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm space-y-4" id="inspector-panel">
+            <div class="flex items-center justify-between border-b border-[var(--border)] pb-3">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-blue-500 pulse-animation"></span>
+                <h3 class="font-bold text-sm uppercase tracking-wider text-[var(--muted-foreground)]">Contract Inspector</h3>
+              </div>
+              <span id="inspect-tag" class="text-xs font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400">Core</span>
+            </div>
+
+            <!-- Dynamic Inspector Content -->
+            <div id="inspector-body" class="space-y-3.5 text-xs">
+              <div>
+                <h2 id="inspect-title" class="text-lg font-bold text-[var(--foreground)]">HoloFiVaultLoanCore</h2>
+                <p id="inspect-file" class="text-[11px] font-mono text-[var(--muted-foreground)]">contracts/HoloFiVaultLoanCore.sol</p>
+              </div>
+
+              <p id="inspect-desc" class="text-[var(--muted-foreground)] leading-relaxed">
+                Central collateral escrow and risk engine. Manages isolated merchant vaults, verifies KYB approvals, computes Health Factors, accrues continuous per-second interest, and coordinates asset draws from registered Lending Pools.
+              </p>
+
+              <div class="space-y-2">
+                <h4 class="font-bold text-[11px] uppercase tracking-wider text-[var(--foreground)]">Key Storage & Mappings</h4>
+                <div id="inspect-storage" class="bg-[var(--background)] p-2.5 rounded-lg border border-[var(--border)] font-mono text-[11px] space-y-1">
+                  <div>mapping(uint256 => CollateralVault) public vaults;</div>
+                  <div>mapping(uint256 => uint256) public nftVaultId;</div>
+                  <div>uint256 public nextVaultId = 1;</div>
+                </div>
+              </div>
+
+              <div class="space-y-2">
+                <h4 class="font-bold text-[11px] uppercase tracking-wider text-[var(--foreground)]">Key Invariants & Security</h4>
+                <ul id="inspect-invariants" class="space-y-1.5 text-[var(--muted-foreground)] list-disc list-inside">
+                  <li>Collateral card is locked in <code class="text-[var(--foreground)]">HoloFiVaultCard</code> upon deposit.</li>
+                  <li>Total Debt never exceeds <code class="text-[var(--foreground)]">getMaxBorrowCapacity()</code>.</li>
+                  <li>Continuous Interest is accrued before any debt or collateral state mutation.</li>
+                  <li>Reentrancy guarded via OpenZeppelin <code class="text-[var(--foreground)]">ReentrancyGuard</code>.</li>
+                </ul>
+              </div>
+
+              <div class="pt-2 border-t border-[var(--border)] flex items-center justify-between text-[11px]">
+                <span class="text-[var(--muted-foreground)]">OpenZeppelin Base:</span>
+                <span id="inspect-oz" class="font-mono font-medium text-blue-400">IERC721Receiver, ReentrancyGuard, Pausable</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Navigation Tip -->
+          <div class="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 text-xs space-y-1 text-blue-400">
+            <div class="font-bold flex items-center gap-1.5">
+              <span>💡</span> Architecture Insight
+            </div>
+            <p class="text-[var(--muted-foreground)] text-[11px] leading-relaxed">
+              HoloFi implements an <strong>isolated multi-vault architecture</strong> where each merchant creates their own vault bound to a specific lending pool asset, ensuring pool-level risk separation and transparent NFT collateral backing.
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- TAB 2: EXECUTION FLOWS -->
+    <div id="view-flows" class="tab-view hidden space-y-6">
+      
+      <!-- Flow Selector Bar -->
+      <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+        <button onclick="selectFlow(1)" id="flow-btn-1" class="flow-pill p-2.5 rounded-xl border border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)] font-bold text-center transition-all-200">
+          1. Card Minting
+        </button>
+        <button onclick="selectFlow(2)" id="flow-btn-2" class="flow-pill p-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] font-bold text-center hover:text-[var(--foreground)] transition-all-200">
+          2. Vault Escrow
+        </button>
+        <button onclick="selectFlow(3)" id="flow-btn-3" class="flow-pill p-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] font-bold text-center hover:text-[var(--foreground)] transition-all-200">
+          3. Borrow Credit
+        </button>
+        <button onclick="selectFlow(4)" id="flow-btn-4" class="flow-pill p-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] font-bold text-center hover:text-[var(--foreground)] transition-all-200">
+          4. Repay & Release
+        </button>
+        <button onclick="selectFlow(5)" id="flow-btn-5" class="flow-pill p-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] font-bold text-center hover:text-[var(--foreground)] transition-all-200">
+          5. Dutch Auction
+        </button>
+        <button onclick="selectFlow(6)" id="flow-btn-6" class="flow-pill p-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] font-bold text-center hover:text-[var(--foreground)] transition-all-200">
+          6. Treasury Buyback
+        </button>
+      </div>
+
+      <!-- Flow Display Card -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-6">
+        
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-[var(--border)] pb-4">
+          <div>
+            <h2 id="flow-title" class="text-xl font-bold text-[var(--foreground)]">Flow 1: Physical Card Vaulting & NFT Minting</h2>
+            <p id="flow-desc" class="text-xs text-[var(--muted-foreground)] mt-0.5">Physical card reception, grading certification hash verification, and permissioned ERC-721 minting.</p>
+          </div>
+          <span id="flow-tag" class="px-3 py-1 text-xs font-mono font-bold rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            Physical-to-Digital Bridge
+          </span>
+        </div>
+
+        <!-- Step-by-Step Interactive Timeline -->
+        <div id="flow-steps" class="space-y-4">
+          <!-- Populated dynamically via JavaScript -->
+        </div>
+
+        <!-- Interactive Visual Sequence Diagram Block -->
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+            <span>Protocol Call Sequence</span>
+            <span class="text-[10px] font-mono text-emerald-400">Atomic Execution</span>
+          </div>
+          <pre id="flow-sequence" class="text-xs font-mono text-[var(--foreground)] overflow-x-auto p-2 bg-[var(--card)] rounded-lg border border-[var(--border)] leading-relaxed">
+Store (Blink) ──► Physical Card Vaulting (Grader, Cert Hash)
+Operator (MINTER_ROLE) ──► HoloFiVaultCard.mintCard(to, cardTypeId, attestationHash, tokenUri)
+HoloFiVaultCard ──► Registers CardMetadata & emits CardMinted(tokenId)
+          </pre>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- TAB 3: CONTRACT MATRIX & ROLE RBAC -->
+    <div id="view-contracts" class="tab-view hidden space-y-6">
+      
+      <!-- Contract Reference Table -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-4">
+        <h2 class="text-lg font-bold text-[var(--foreground)]">Smart Contract Registry & Interfaces</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b border-[var(--border)] text-[var(--muted-foreground)]">
+                <th class="py-2.5 px-3 font-semibold">Contract</th>
+                <th class="py-2.5 px-3 font-semibold">Standards / Base</th>
+                <th class="py-2.5 px-3 font-semibold">Core Responsibility</th>
+                <th class="py-2.5 px-3 font-semibold">Access Roles</th>
+                <th class="py-2.5 px-3 font-semibold">Modifiers</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[var(--border)] font-mono text-[11px]">
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-blue-400">AccessControlManager</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">OpenZeppelin AccessControl</td>
+                <td class="py-3 px-3 font-sans text-xs">Protocol RBAC & KYB merchant whitelisting</td>
+                <td class="py-3 px-3"><span class="text-amber-400">ADMIN</span>, <span class="text-emerald-400">KYB_MGR</span></td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">onlyKybManagerOrAdmin</td>
+              </tr>
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-purple-400">HoloFiVaultCard</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">ERC721URIStorage</td>
+                <td class="py-3 px-3 font-sans text-xs">Permissioned TCG Card NFT with transfer lock guard</td>
+                <td class="py-3 px-3"><span class="text-purple-400">MINTER</span>, <span class="text-pink-400">LOCKER</span></td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">_update (isLocked check)</td>
+              </tr>
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-cyan-400">HoloFiCardPriceFeed</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">EnumerableSet</td>
+                <td class="py-3 px-3 font-sans text-xs">Packed 128-bit USD FMV price registry per cardTypeId</td>
+                <td class="py-3 px-3"><span class="text-cyan-400">ORACLE</span></td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">onlyOracle</td>
+              </tr>
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-blue-400">HoloFiVaultLoanCore</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">IERC721Receiver, ReentrancyGuard, Pausable</td>
+                <td class="py-3 px-3 font-sans text-xs">Collateral escrow, continuous interest accrual, borrow/repay</td>
+                <td class="py-3 px-3"><span class="text-amber-400">ADMIN</span>, <span class="text-orange-400">PAUSER</span>, Auction</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">nonReentrant, whenNotPaused</td>
+              </tr>
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-teal-400">HoloFiLendingPoolFactory</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">Pool Registry</td>
+                <td class="py-3 px-3 font-sans text-xs">Multi-asset pool deployment with isolated risk caps</td>
+                <td class="py-3 px-3"><span class="text-amber-400">ADMIN</span></td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">acm.ADMIN_ROLE</td>
+              </tr>
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-emerald-400">HoloFiLendingPool</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">ERC4626, Pausable</td>
+                <td class="py-3 px-3 font-sans text-xs">Permissioned yield vault, non-transferable shares, 3-dec offset</td>
+                <td class="py-3 px-3"><span class="text-amber-400">ADMIN</span>, <span class="text-orange-400">PAUSER</span>, LoanCore</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">whenNotPaused, _update guard</td>
+              </tr>
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-rose-400">HoloFiDutchAuction</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">ReentrancyGuard, Pausable</td>
+                <td class="py-3 px-3 font-sans text-xs">Linear decaying auction, surplus refund, Treasury buyback</td>
+                <td class="py-3 px-3"><span class="text-amber-400">ADMIN</span>, Treasury</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">nonReentrant, whenNotPaused</td>
+              </tr>
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-emerald-400">GradeEligibilityPolicy</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">ICardEligibilityPolicy</td>
+                <td class="py-3 px-3 font-sans text-xs">Policy filter evaluating grading authority & integer grade</td>
+                <td class="py-3 px-3"><span class="text-purple-400">MINTER</span></td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">onlyMinter</td>
+              </tr>
+              <tr class="hover:bg-[var(--background)] transition-all-200">
+                <td class="py-3 px-3 font-bold text-gray-400">DecimalMath</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">Solidity Library</td>
+                <td class="py-3 px-3 font-sans text-xs">Scales 18-dec USD FMV into target ERC20 token decimals</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">Public pure/view</td>
+                <td class="py-3 px-3 text-[var(--muted-foreground)]">Internal</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Access Control Matrix -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-4">
+        <h2 class="text-lg font-bold text-[var(--foreground)]">Role-Based Access Control (RBAC) Matrix</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div class="bg-[var(--background)] p-4 rounded-xl border border-[var(--border)] space-y-2">
+            <div class="font-bold text-amber-500 flex items-center gap-1.5">
+              <span>👑</span> ADMIN_ROLE (3-of-5 MultiSig)
+            </div>
+            <p class="text-[var(--muted-foreground)] text-[11px]">Governs all parameter changes, deploys lending pools, assigns contract roles, sets eligibility policies, unpauses contracts.</p>
+          </div>
+          <div class="bg-[var(--background)] p-4 rounded-xl border border-[var(--border)] space-y-2">
+            <div class="font-bold text-cyan-500 flex items-center gap-1.5">
+              <span>🔮</span> ORACLE_ROLE (Chainlink CRE)
+            </div>
+            <p class="text-[var(--muted-foreground)] text-[11px]">Authorized to update USD FMV prices via <code>setPrice()</code> and <code>setBatchPrices()</code> on <code>HoloFiCardPriceFeed</code>.</p>
+          </div>
+          <div class="bg-[var(--background)] p-4 rounded-xl border border-[var(--border)] space-y-2">
+            <div class="font-bold text-orange-500 flex items-center gap-1.5">
+              <span>🛑</span> PAUSER_ROLE (Emergency Breaker)
+            </div>
+            <p class="text-[var(--muted-foreground)] text-[11px]">Authorized to pause operations on <code>HoloFiVaultLoanCore</code>, <code>HoloFiLendingPool</code>, and <code>HoloFiDutchAuction</code> during market volatility.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TAB 4: RISK & MATH SIMULATOR -->
+    <div id="view-simulator" class="tab-view hidden space-y-6">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- Calculator 1: Health Factor & Max Borrow Capacity -->
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-5">
+          <div class="flex items-center justify-between border-b border-[var(--border)] pb-3">
+            <div>
+              <h2 class="text-base font-bold text-[var(--foreground)]">Health Factor & Borrow Capacity</h2>
+              <p class="text-xs text-[var(--muted-foreground)]">Calculates dynamic borrowing limits & liquidation thresholds.</p>
+            </div>
+            <span class="px-2 py-0.5 text-xs font-mono rounded bg-blue-500/10 text-blue-400">Risk Engine</span>
+          </div>
+
+          <!-- Inputs -->
+          <div class="space-y-3.5 text-xs">
+            <div>
+              <div class="flex justify-between font-semibold mb-1">
+                <span>Total Vault Card FMV (USD):</span>
+                <span id="calc-fmv-val" class="font-mono text-blue-400">$10,000</span>
+              </div>
+              <input type="range" id="calc-fmv" min="1000" max="50000" step="500" value="10000" class="w-full accent-blue-500" oninput="updateCalculators()">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="font-semibold block mb-1">Max LTV (%):</label>
+                <input type="number" id="calc-ltv" value="50" min="10" max="90" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 font-mono text-xs" oninput="updateCalculators()">
+              </div>
+              <div>
+                <label class="font-semibold block mb-1">Liquidation Threshold (%):</label>
+                <input type="number" id="calc-lt" value="70" min="20" max="95" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 font-mono text-xs" oninput="updateCalculators()">
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between font-semibold mb-1">
+                <span>Current Total Debt (USD):</span>
+                <span id="calc-debt-val" class="font-mono text-amber-400">$4,500</span>
+              </div>
+              <input type="range" id="calc-debt" min="0" max="10000" step="100" value="4500" class="w-full accent-amber-500" oninput="updateCalculators()">
+            </div>
+          </div>
+
+          <!-- Output Metrics -->
+          <div class="bg-[var(--background)] p-4 rounded-xl border border-[var(--border)] space-y-3 text-xs">
+            <div class="flex justify-between items-center">
+              <span class="text-[var(--muted-foreground)]">Max Borrow Capacity:</span>
+              <span id="res-max-borrow" class="font-mono font-bold text-emerald-400">$5,000 USDC</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-[var(--muted-foreground)]">Liquidation Limit FMV:</span>
+              <span id="res-liq-limit" class="font-mono font-bold text-amber-400">$7,000 USDC</span>
+            </div>
+            <div class="pt-2 border-t border-[var(--border)] flex justify-between items-center">
+              <span class="font-bold">Health Factor (HF):</span>
+              <div class="flex items-center gap-2">
+                <span id="res-hf-gauge" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <span id="res-hf" class="font-mono font-bold text-base text-emerald-400">1.55</span>
+              </div>
+            </div>
+            <div id="res-hf-status" class="text-[11px] text-emerald-400 font-medium bg-emerald-500/10 p-2 rounded border border-emerald-500/20 text-center">
+              ✅ Vault is Safe (HF &ge; 1.0)
+            </div>
+          </div>
+        </div>
+
+        <!-- Calculator 2: Dutch Auction Linear Price Decay & Waterfall -->
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-5">
+          <div class="flex items-center justify-between border-b border-[var(--border)] pb-3">
+            <div>
+              <h2 class="text-base font-bold text-[var(--foreground)]">Dutch Auction Waterfall Simulator</h2>
+              <p class="text-xs text-[var(--muted-foreground)]">Simulates linear 48h price decay and waterfall fund distribution.</p>
+            </div>
+            <span class="px-2 py-0.5 text-xs font-mono rounded bg-rose-500/10 text-rose-400">Liquidation</span>
+          </div>
+
+          <!-- Inputs -->
+          <div class="space-y-3.5 text-xs">
+            <div>
+              <div class="flex justify-between font-semibold mb-1">
+                <span>Auction Elapsed Time:</span>
+                <span id="auc-time-val" class="font-mono text-rose-400">12.0 Hours (25%)</span>
+              </div>
+              <input type="range" id="auc-time" min="0" max="48" step="0.5" value="12" class="w-full accent-rose-500" oninput="updateCalculators()">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="font-semibold block mb-1">Start FMV ($):</label>
+                <input type="number" id="auc-fmv" value="10000" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 font-mono text-xs" oninput="updateCalculators()">
+              </div>
+              <div>
+                <label class="font-semibold block mb-1">Total Loan Debt ($):</label>
+                <input type="number" id="auc-debt" value="7000" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 font-mono text-xs" oninput="updateCalculators()">
+              </div>
+            </div>
+          </div>
+
+          <!-- Waterfall Output Box -->
+          <div class="bg-[var(--background)] p-4 rounded-xl border border-[var(--border)] space-y-2.5 text-xs">
+            <div class="flex justify-between">
+              <span class="text-[var(--muted-foreground)]">Start Price (120% FMV):</span>
+              <span id="res-auc-start" class="font-mono text-[var(--foreground)]">$12,000</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-[var(--muted-foreground)]">Reserve Price (Debt + 10% Pen):</span>
+              <span id="res-auc-reserve" class="font-mono text-rose-400">$7,700</span>
+            </div>
+            <div class="flex justify-between items-center pt-2 border-t border-[var(--border)]">
+              <span class="font-bold">Current Clearing Price:</span>
+              <span id="res-auc-current" class="font-mono font-bold text-base text-blue-400">$10,925</span>
+            </div>
+
+            <!-- Waterfall distribution breakdown -->
+            <div class="pt-2 border-t border-[var(--border)] space-y-1.5 text-[11px] font-mono">
+              <div class="text-[var(--muted-foreground)] uppercase text-[10px] font-bold">Settlement Waterfall Breakdown:</div>
+              <div class="flex justify-between text-emerald-400">
+                <span>1. Loan Debt to Pool:</span>
+                <span id="res-wf-debt">$7,000</span>
+              </div>
+              <div class="flex justify-between text-amber-400">
+                <span>2. Penalty to Pool:</span>
+                <span id="res-wf-pen">$700</span>
+              </div>
+              <div class="flex justify-between text-blue-400">
+                <span>3. Residual Surplus to Store:</span>
+                <span id="res-wf-surplus">$3,225</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- JavaScript for Interactivity & State Management -->
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle('light');
+    }
+
+    // Tab switching logic
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-[var(--card)]', 'text-[var(--primary)]', 'border', 'border-[var(--border)]', 'shadow-sm');
+        btn.classList.add('text-[var(--muted-foreground)]');
+      });
+
+      const activeView = document.getElementById('view-' + tabId);
+      const activeBtn = document.getElementById('tab-btn-' + tabId);
+      if (activeView && activeBtn) {
+        activeView.classList.remove('hidden');
+        activeBtn.classList.add('bg-[var(--card)]', 'text-[var(--primary)]', 'border', 'border-[var(--border)]', 'shadow-sm');
+        activeBtn.classList.remove('text-[var(--muted-foreground)]');
+      }
+    }
+
+    // Layer Highlight Filter
+    function filterLayer(layer) {
+      document.querySelectorAll('.layer-pill').forEach(btn => {
+        btn.classList.remove('bg-[var(--primary)]', 'text-[var(--primary-foreground)]');
+        btn.classList.add('bg-[var(--background)]', 'text-[var(--muted-foreground)]', 'border', 'border-[var(--border)]');
+      });
+      event.target.classList.remove('bg-[var(--background)]', 'text-[var(--muted-foreground)]', 'border', 'border-[var(--border)]');
+      event.target.classList.add('bg-[var(--primary)]', 'text-[var(--primary-foreground)]');
+
+      const allCards = document.querySelectorAll('.contract-card');
+      if (layer === 'all') {
+        allCards.forEach(c => c.style.opacity = '1');
+      } else {
+        allCards.forEach(c => {
+          if (c.id && c.id.includes(layer)) {
+            c.style.opacity = '1';
+            c.classList.add('glow-active');
+            setTimeout(() => c.classList.remove('glow-active'), 1500);
+          } else {
+            c.style.opacity = '0.35';
+          }
+        });
+      }
+    }
+
+    // Contract Inspector Data
+    const contractData = {
+      ACM: {
+        title: "AccessControlManager",
+        file: "contracts/AccessControlManager.sol",
+        tag: "RBAC & KYB",
+        desc: "Centralized Role-Based Access Control registry and merchant KYB whitelist status manager. Emits KybStatusUpdated events on approvals.",
+        storage: [
+          "mapping(address => bool) public isKybApproved;",
+          "bytes32 public constant ADMIN_ROLE;",
+          "bytes32 public constant ORACLE_ROLE;",
+          "bytes32 public constant KYB_MANAGER_ROLE;",
+          "bytes32 public constant PAUSER_ROLE;",
+          "bytes32 public constant MINTER_ROLE;",
+          "bytes32 public constant LOCKER_ROLE;"
+        ],
+        invariants: [
+          "Admin cannot be address(0).",
+          "Only KYB_MANAGER_ROLE or ADMIN_ROLE can grant or revoke KYB status.",
+          "Role admin hierarchy configured during constructor deployment."
+        ],
+        oz: "AccessControl"
+      },
+      VaultCard: {
+        title: "HoloFiVaultCard",
+        file: "contracts/HoloFiVaultCard.sol",
+        tag: "ERC-721",
+        desc: "Permissioned ERC-721 token collection representing physical TCG card assets vaulted by certified partner Blink. Enforces transfer freeze lock.",
+        storage: [
+          "struct CardMetadata { uint256 tokenId, bytes32 cardTypeId, bytes32 attestationHash, uint256 mintTimestamp, bool isLocked }",
+          "mapping(uint256 => CardMetadata) public cards;",
+          "mapping(bytes32 => bool) public isAttestationUsed;",
+          "uint256 public nextTokenId = 1;"
+        ],
+        invariants: [
+          "Transfer reverts with CardIsLocked(tokenId) if isLocked == true.",
+          "Attestation hash cannot be reused across multiple tokens.",
+          "Only MINTER_ROLE can mint new cards; only LOCKER_ROLE can toggle lock state.",
+          "Burning requires unlocked status and burns metadata cleanly."
+        ],
+        oz: "ERC721URIStorage"
+      },
+      PriceFeed: {
+        title: "HoloFiCardPriceFeed",
+        file: "contracts/HoloFiCardPriceFeed.sol",
+        tag: "Oracle Registry",
+        desc: "Gas-optimized Fair Market Value (FMV) price feed registry for TCG card models. Packed into a single 256-bit slot per cardTypeId.",
+        storage: [
+          "struct PriceData { uint128 price, uint128 lastUpdated }",
+          "mapping(bytes32 => PriceData) public prices;",
+          "EnumerableSet.Bytes32Set private _cardTypeIds;"
+        ],
+        invariants: [
+          "Prices cannot be updated to 0.",
+          "Only ORACLE_ROLE can call setPrice() and setBatchPrices().",
+          "EnumerableSet maintains active list of supported cardTypeIds without duplicates."
+        ],
+        oz: "EnumerableSet"
+      },
+      Policy: {
+        title: "GradeEligibilityPolicy",
+        file: "contracts/policies/GradeEligibilityPolicy.sol",
+        tag: "Policy Engine",
+        desc: "Modular policy filter strategy verifying card eligibility against grading authority string (e.g. PSA) and integer grade thresholds.",
+        storage: [
+          "string public requiredGrader;",
+          "uint256 public minGrade;",
+          "uint256 public maxGrade;",
+          "mapping(bytes32 => bool) public isEligible;"
+        ],
+        invariants: [
+          "Parses grade ASCII numbers into numeric uint256.",
+          "computeCardTypeId deterministically matches keccak256(abi.encode(attrs)).",
+          "Only MINTER_ROLE can register card types or update overrides."
+        ],
+        oz: "ICardEligibilityPolicy"
+      },
+      LoanCore: {
+        title: "HoloFiVaultLoanCore",
+        file: "contracts/HoloFiVaultLoanCore.sol",
+        tag: "Credit Engine",
+        desc: "Core credit manager and collateral escrow contract. Holds deposited NFT cards, calculates continuous interest, checks LTV limits, and interfaces with bound LendingPools.",
+        storage: [
+          "struct CollateralVault { uint256 vaultId, address owner, address lendingPool, uint256[] tokenIds, uint256 principalDebt, uint256 accumulatedInterest, uint256 lastInterestUpdateTime, VaultStatus status }",
+          "mapping(uint256 => CollateralVault) public vaults;",
+          "mapping(uint256 => uint256) public nftVaultId;"
+        ],
+        invariants: [
+          "Merchant must be KYB approved to create vault or deposit collateral.",
+          "Total debt cannot exceed getMaxBorrowCapacity() during borrow.",
+          "Collateral cannot be withdrawn if remaining FMV breaches safe LTV.",
+          "accrueInterest() must run prior to any debt/collateral state change."
+        ],
+        oz: "IERC721Receiver, ReentrancyGuard, Pausable"
+      },
+      Factory: {
+        title: "HoloFiLendingPoolFactory",
+        file: "contracts/HoloFiLendingPoolFactory.sol",
+        tag: "Factory",
+        desc: "Multi-asset factory for deploying and registering permissioned HoloFiLendingPool instances with asset-specific risk caps.",
+        storage: [
+          "mapping(address => address[]) public poolsByAsset;",
+          "mapping(address => bool) public isValidPool;",
+          "address[] public allPools;"
+        ],
+        invariants: [
+          "Only ADMIN_ROLE can deploy new pools.",
+          "Reverts if underlying asset is address(0).",
+          "Pools are registered in isValidPool upon deployment."
+        ],
+        oz: "Factory Pattern"
+      },
+      Pool: {
+        title: "HoloFiLendingPool",
+        file: "contracts/HoloFiLendingPool.sol",
+        tag: "ERC-4626",
+        desc: "Generic permissioned ERC-4626 liquidity pool issuing custom non-transferable pToken shares. Features 3-decimal virtual offset.",
+        storage: [
+          "uint256 public maxLtvBps;",
+          "uint256 public liquidationThresholdBps;",
+          "uint256 public liquidationPenaltyBps;",
+          "uint256 public borrowRateBpsPerYear;",
+          "uint256 public totalBorrows;"
+        ],
+        invariants: [
+          "Share transfers revert with ShareTokenNonTransferable.",
+          "maxLtvBps <= liquidationThresholdBps <= 10000.",
+          "_decimalsOffset() returns 3 to defeat inflation/donation attacks.",
+          "drawLiquidity restricted to LoanCore; returnLiquidity restricted to LoanCore/Auction."
+        ],
+        oz: "ERC4626, ERC20, SafeERC20, Pausable"
+      },
+      DutchAuction: {
+        title: "HoloFiDutchAuction",
+        file: "contracts/HoloFiDutchAuction.sol",
+        tag: "Auction",
+        desc: "Linear descending Dutch Auction liquidation contract. Settles undercollateralized vaults and distributes funds through a waterfall priority.",
+        storage: [
+          "struct Auction { uint256 vaultId, uint256 startFmv, uint256 startPrice, uint256 debtAmount, uint256 penaltyAmount, uint256 reservePrice, uint256 startTime, uint256 duration, address seller, bool isSettled }",
+          "mapping(uint256 => Auction) public auctions;",
+          "address public treasury;"
+        ],
+        invariants: [
+          "Only triggers when Health Factor < 1.0 in HoloFiVaultLoanCore.",
+          "Start Price = 120% FMV; Reserve Price = Debt + Liquidation Penalty.",
+          "Waterfall: 1st Loan Debt to Pool -> 2nd Penalty to Pool -> 3rd Residual Surplus to Store.",
+          "Treasury backstop buyback allowed only after 48h expiration."
+        ],
+        oz: "ReentrancyGuard, Pausable, SafeERC20"
+      }
+    };
+
+    function inspectContract(key) {
+      const data = contractData[key];
+      if (!data) return;
+
+      document.getElementById('inspect-title').innerText = data.title;
+      document.getElementById('inspect-file').innerText = data.file;
+      document.getElementById('inspect-tag').innerText = data.tag;
+      document.getElementById('inspect-desc').innerText = data.desc;
+      document.getElementById('inspect-oz').innerText = data.oz;
+
+      const storageContainer = document.getElementById('inspect-storage');
+      storageContainer.innerHTML = data.storage.map(s => `<div>${s}</div>`).join('');
+
+      const invariantsContainer = document.getElementById('inspect-invariants');
+      invariantsContainer.innerHTML = data.invariants.map(inv => `<li>${inv}</li>`).join('');
+
+      const panel = document.getElementById('inspector-panel');
+      panel.classList.add('glow-active');
+      setTimeout(() => panel.classList.remove('glow-active'), 600);
+    }
+
+    // Execution Flow Data
+    const flowsData = [
+      {
+        id: 1,
+        title: "Flow 1: Physical Card Vaulting & NFT Minting",
+        desc: "Physical card reception, grading certification hash verification, and permissioned ERC-721 minting.",
+        tag: "Physical-to-Digital Bridge",
+        steps: [
+          { num: "01", title: "Physical Custody & Ingestion", desc: "Merchant ships card to certified partner Blink. Card is graded, authenticated, and vaulted in physical security vault." },
+          { num: "02", title: "Attestation & Payload Creation", desc: "Blink generates attestation hash = keccak256(rawData) binding cert number, grader, and condition." },
+          { num: "03", title: "Minter Role Invocation", desc: "Operator calls HoloFiVaultCard.mintCard(to, cardTypeId, attestationHash, tokenUri)." },
+          { num: "04", title: "NFT Minted to Store Wallet", desc: "NFT is minted to store wallet; isAttestationUsed set to true; transfer lock defaults to false." }
+        ],
+        seq: `Store (Blink) ──► Physical Card Vaulting (Grader, Cert Hash)\nOperator (MINTER_ROLE) ──► HoloFiVaultCard.mintCard(to, cardTypeId, attestationHash, tokenUri)\nHoloFiVaultCard ──► Registers CardMetadata & emits CardMinted(tokenId)`
+      },
+      {
+        id: 2,
+        title: "Flow 2: Isolated Vault Creation & Collateral Escrow",
+        desc: "KYB verification, vault binding to specific Lending Pool, eligibility check, and collateral transfer freeze.",
+        tag: "Collateral Escrow",
+        steps: [
+          { num: "01", title: "KYB Verification", desc: "AccessControlManager verifies isKybApproved[storeAddress] == true before allowing vault creation." },
+          { num: "02", title: "createVault(pool)", desc: "Store calls LoanCore.createVault(poolAddress). Binds pool, initializes debt to 0, status = Active." },
+          { num: "03", title: "Collateral Eligibility Check", desc: "LoanCore queries bound pool.isCollateralAllowed(cardTypeId), delegating to GradeEligibilityPolicy." },
+          { num: "04", title: "Escrow & Lock", desc: "NFT transferred to LoanCore via safeTransferFrom(); LoanCore calls setCardLock(tokenId, true)." }
+        ],
+        seq: `Store ──► AccessControlManager.isKybApproved(store) == true\nStore ──► HoloFiVaultLoanCore.createVault(lendingPool)\nStore ──► HoloFiVaultLoanCore.depositCollateral(vaultId, [tokenId])\nLoanCore ──► HoloFiLendingPool.isCollateralAllowed(cardTypeId)\nLoanCore ──► HoloFiVaultCard.setCardLock(tokenId, true)`
+      },
+      {
+        id: 3,
+        title: "Flow 3: Credit Borrow & Liquidity Draw",
+        desc: "Continuous interest accrual, Oracle FMV evaluation, DecimalMath scaling, and liquidity draw from ERC-4626 pool.",
+        tag: "Credit Execution",
+        steps: [
+          { num: "01", title: "accrueInterest()", desc: "Accrues per-second interest on active debt at pool.borrowRateBpsPerYear() prior to state mutation." },
+          { num: "02", title: "FMV Oracle Valuation", desc: "LoanCore aggregates getVaultFMV() by calling HoloFiCardPriceFeed.getPrice(cardTypeId)." },
+          { num: "03", title: "Decimal & LTV Validation", desc: "DecimalMath normalizes FMV to asset decimals. Verifies Total Debt + Amount <= Max Borrow Capacity." },
+          { num: "04", title: "drawLiquidity()", desc: "LoanCore updates principalDebt and invokes HoloFiLendingPool.drawLiquidity(store, amount)." }
+        ],
+        seq: `Store ──► HoloFiVaultLoanCore.borrow(vaultId, amount)\nLoanCore ──► HoloFiCardPriceFeed.getPrice(cardTypeId) => FMV\nLoanCore ──► Checks: TotalDebt + amount <= getMaxBorrowCapacity()\nLoanCore ──► HoloFiLendingPool.drawLiquidity(store, amount)\nLendingPool ──► SafeERC20.transfer(store, amount)`
+      },
+      {
+        id: 4,
+        title: "Flow 4: Waterfall Repayment & Collateral Release",
+        desc: "Waterfall interest-first debt retirement, ERC-4626 liquidity return, and LTV-guarded NFT unlock.",
+        tag: "Debt Clearance",
+        steps: [
+          { num: "01", title: "Interest-First Waterfall", desc: "Repayment amount is applied to accumulatedInterest first, then remaining balance pays principalDebt." },
+          { num: "02", title: "returnLiquidity()", desc: "Underlying tokens pulled from payer to LendingPool; totalBorrows reduced by principalPaid." },
+          { num: "03", title: "LTV Safety Verification", desc: "If partial withdrawal requested, verifies remaining FMV satisfies LTV threshold for active debt." },
+          { num: "04", title: "Unlock & Return NFT", desc: "LoanCore calls HoloFiVaultCard.setCardLock(tokenId, false) and transfers NFT back to store." }
+        ],
+        seq: `Store ──► HoloFiVaultLoanCore.repayAndWithdraw(vaultId, repayAmount, [tokenIds])\nLoanCore ──► Waterfall: Pays accumulatedInterest then principalDebt\nLoanCore ──► HoloFiLendingPool.returnLiquidity(payer, principalPaid, totalRepay)\nLoanCore ──► Verifies remainingCollateral >= requiredLTV\nLoanCore ──► HoloFiVaultCard.setCardLock(tokenId, false)\nLoanCore ──► HoloFiVaultCard.safeTransferFrom(escrow, store, tokenId)`
+      },
+      {
+        id: 5,
+        title: "Flow 5: Dutch Auction Liquidation & Surplus Refund",
+        desc: "Triggered on Health Factor < 1.0. Linear 48-hour price decay, liquidator settlement, and equity surplus refund.",
+        tag: "Liquidation Waterfall",
+        steps: [
+          { num: "01", title: "startAuction()", desc: "Keeper checks Health Factor < 1.0; LoanCore sets status = Liquidating; Auction fixes 120% start price." },
+          { num: "02", title: "Linear Price Decay", desc: "Price drops linearly from 120% FMV to Reserve Price (Debt + Penalty) over 48 hours." },
+          { num: "03", title: "settleAuction()", desc: "Liquidator pays Current Price. Funds split: Debt to Pool, Penalty to Pool, Surplus to Store." },
+          { num: "04", title: "Collateral Transfer", desc: "LoanCore marks vault Closed, unlocks card, and transfers physical NFT to liquidator." }
+        ],
+        seq: `Keeper ──► HoloFiDutchAuction.startAuction(vaultId) [HF < 1.0]\nDutchAuction ──► HoloFiVaultLoanCore.startLiquidation(vaultId)\nLiquidator ──► HoloFiDutchAuction.settleAuction(vaultId) [Pays CurrentPrice]\nDutchAuction ──► 1. returnLiquidity(Debt) to LendingPool\nDutchAuction ──► 2. safeTransfer(Penalty) to LendingPool\nDutchAuction ──► 3. safeTransfer(Surplus) to Original Store\nDutchAuction ──► LoanCore.finalizeLiquidation(vaultId, liquidator)`
+      },
+      {
+        id: 6,
+        title: "Flow 6: Protocol Treasury Backstop Buyback",
+        desc: "Protocol backstop triggered for unbid auctions expired after 48 hours to preserve pool solvency.",
+        tag: "Treasury Backstop",
+        steps: [
+          { num: "01", title: "48-Hour Expiry Check", desc: "Enforces block.timestamp >= auction.startTime + 48 hours and msg.sender == treasury." },
+          { num: "02", title: "Debt-Only Clearance", desc: "Treasury pays exact 100% principal + interest debt to pool (liquidation penalty is waived)." },
+          { num: "03", title: "returnLiquidity()", desc: "Full debt returned to LendingPool to maintain 100% pool solvency." },
+          { num: "04", title: "NFT Transferred to Treasury", desc: "Physical card NFTs unlocked and transferred to Protocol Treasury for secondary OTC sale." }
+        ],
+        seq: `Treasury ──► HoloFiDutchAuction.treasuryBuyback(vaultId) [After 48h Expiry]\nDutchAuction ──► Pulls exact debtAmount from Treasury\nDutchAuction ──► HoloFiLendingPool.returnLiquidity(Debt)\nDutchAuction ──► HoloFiVaultLoanCore.finalizeLiquidation(vaultId, Treasury)\nLoanCore ──► Transfers unlocked NFTs to Treasury wallet`
+      }
+    ];
+
+    function selectFlow(index) {
+      document.querySelectorAll('.flow-pill').forEach((btn, idx) => {
+        if (idx + 1 === index) {
+          btn.classList.remove('bg-[var(--card)]', 'text-[var(--muted-foreground)]', 'border-[var(--border)]');
+          btn.classList.add('bg-[var(--primary)]', 'text-[var(--primary-foreground)]', 'border-[var(--primary)]');
+        } else {
+          btn.classList.remove('bg-[var(--primary)]', 'text-[var(--primary-foreground)]', 'border-[var(--primary)]');
+          btn.classList.add('bg-[var(--card)]', 'text-[var(--muted-foreground)]', 'border-[var(--border)]');
+        }
+      });
+
+      const flow = flowsData[index - 1];
+      document.getElementById('flow-title').innerText = flow.title;
+      document.getElementById('flow-desc').innerText = flow.desc;
+      document.getElementById('flow-tag').innerText = flow.tag;
+      document.getElementById('flow-sequence').innerText = flow.seq;
+
+      const stepsContainer = document.getElementById('flow-steps');
+      stepsContainer.innerHTML = flow.steps.map(step => `
+        <div class="flex items-start gap-3 bg-[var(--background)] p-3.5 rounded-xl border border-[var(--border)]">
+          <span class="flex-shrink-0 w-7 h-7 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-mono font-bold text-xs">
+            ${step.num}
+          </span>
+          <div class="space-y-0.5 text-xs">
+            <h4 class="font-bold text-[var(--foreground)]">${step.title}</h4>
+            <p class="text-[var(--muted-foreground)] leading-relaxed">${step.desc}</p>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Risk & Math Simulator Engine
+    function updateCalculators() {
+      // Calculator 1: Health Factor & Max Borrow
+      const fmv = parseFloat(document.getElementById('calc-fmv').value);
+      const ltvPct = parseFloat(document.getElementById('calc-ltv').value);
+      const ltPct = parseFloat(document.getElementById('calc-lt').value);
+      const debt = parseFloat(document.getElementById('calc-debt').value);
+
+      document.getElementById('calc-fmv-val').innerText = '$' + fmv.toLocaleString();
+      document.getElementById('calc-debt-val').innerText = '$' + debt.toLocaleString();
+
+      const maxBorrow = (fmv * ltvPct) / 100;
+      const liqLimit = (fmv * ltPct) / 100;
+      const hf = debt > 0 ? (liqLimit / debt) : 999.99;
+
+      document.getElementById('res-max-borrow').innerText = '$' + maxBorrow.toLocaleString() + ' USDC';
+      document.getElementById('res-liq-limit').innerText = '$' + liqLimit.toLocaleString() + ' USDC';
+      document.getElementById('res-hf').innerText = hf > 100 ? '∞' : hf.toFixed(2);
+
+      const hfGauge = document.getElementById('res-hf-gauge');
+      const hfStatus = document.getElementById('res-hf-status');
+
+      if (hf >= 1.2) {
+        hfGauge.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+        document.getElementById('res-hf').className = 'font-mono font-bold text-base text-emerald-400';
+        hfStatus.className = 'text-[11px] text-emerald-400 font-medium bg-emerald-500/10 p-2 rounded border border-emerald-500/20 text-center';
+        hfStatus.innerText = `✅ Vault is Safe (Health Factor: ${hf.toFixed(2)} >= 1.0)`;
+      } else if (hf >= 1.0) {
+        hfGauge.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+        document.getElementById('res-hf').className = 'font-mono font-bold text-base text-amber-400';
+        hfStatus.className = 'text-[11px] text-amber-400 font-medium bg-amber-500/10 p-2 rounded border border-amber-500/20 text-center';
+        hfStatus.innerText = `⚠️ Moderate Risk (Near Liquidation Threshold)`;
+      } else {
+        hfGauge.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 pulse-animation';
+        document.getElementById('res-hf').className = 'font-mono font-bold text-base text-rose-400';
+        hfStatus.className = 'text-[11px] text-rose-400 font-medium bg-rose-500/10 p-2 rounded border border-rose-500/20 text-center';
+        hfStatus.innerText = `🚨 Liquidatable! (HF: ${hf.toFixed(2)} < 1.0 -> Dutch Auction Trigger)`;
+      }
+
+      // Calculator 2: Dutch Auction Linear Decay
+      const aucElapsed = parseFloat(document.getElementById('auc-time').value);
+      const aucFmv = parseFloat(document.getElementById('auc-fmv').value);
+      const aucDebt = parseFloat(document.getElementById('auc-debt').value);
+
+      const elapsedPct = ((aucElapsed / 48) * 100).toFixed(0);
+      document.getElementById('auc-time-val').innerText = `${aucElapsed.toFixed(1)} Hours (${elapsedPct}%)`;
+
+      const startPrice = Math.max(aucFmv * 1.2, aucDebt * 1.1);
+      const penalty = aucDebt * 0.1;
+      const reservePrice = aucDebt + penalty;
+
+      let currentPrice = startPrice;
+      if (aucElapsed >= 48) {
+        currentPrice = reservePrice;
+      } else {
+        const drop = ((startPrice - reservePrice) * aucElapsed) / 48;
+        currentPrice = startPrice - drop;
+      }
+
+      const surplus = currentPrice > reservePrice ? (currentPrice - reservePrice) : 0;
+
+      document.getElementById('res-auc-start').innerText = '$' + startPrice.toLocaleString();
+      document.getElementById('res-auc-reserve').innerText = '$' + reservePrice.toLocaleString();
+      document.getElementById('res-auc-current').innerText = '$' + currentPrice.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+      document.getElementById('res-wf-debt').innerText = '$' + aucDebt.toLocaleString();
+      document.getElementById('res-wf-pen').innerText = '$' + penalty.toLocaleString();
+      document.getElementById('res-wf-surplus').innerText = '$' + surplus.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+
+    // Initialize Default States
+    window.addEventListener('DOMContentLoaded', () => {
+      selectFlow(1);
+      updateCalculators();
+    });
+  </script>
+</body>
+</html>

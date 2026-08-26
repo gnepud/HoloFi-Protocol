@@ -103,32 +103,19 @@ $$\text{FMV}_{\text{final}} = \text{TWAP}_{90d} \times \left(1 - \min\left(\text
 
 
 
-#### B. Chainlink CRE Architecture & EIP-712 Signatures
+#### B. On-Chain Price Feed Architecture (`HoloFiCardPriceFeed`)
 
-The **Chainlink Runtime Environment (CRE)** node executes the aggregation script and cryptographically signs the output.
+The **HoloFiCardPriceFeed** smart contract maintains an on-chain, gas-optimized Fair Market Value (FMV) price registry:
 
-* **EIP-712 Typed Data Structure**:
-```solidity
-bytes32 public constant VAULT_VALUATION_TYPEHASH = keccak256(
-    "VaultValuationPayload(uint256 vaultId,uint256 totalFmv,uint256 timestamp,uint256 expiration,uint256 nonce)"
-);
-
-struct VaultValuationPayload {
-    uint256 vaultId;
-    uint256 totalFmv;    // Aggregated vault FMV in USDC (6 decimals)
-    uint256 timestamp;
-    uint256 expiration;  // E.g., timestamp + 2 hours
-    uint256 nonce;
-}
-
-```
-
-
-* **On-Chain Verification**:
-During `borrow()`, `withdrawCollateral()`, or `triggerVaultLiquidation()`, the contract reconstructs the digest via `_hashTypedDataV4` and verifies `ECDSA.recover`. Transactions revert if:
-1. The signature is not from an authorized `ORACLE_ROLE` address.
-2. `block.timestamp > payload.expiration`.
-3. The `nonce` has already been spent.
+* **Packed Storage Structure**:
+  - `PriceData` packs a 128-bit price (`uint128`, 18 decimals in USD) and a 128-bit timestamp (`uint128 lastUpdated`) into a single 256-bit EVM storage slot per `cardTypeId`.
+* **Enumerable Card Types**:
+  - Utilizes OpenZeppelin's `EnumerableSet.Bytes32Set` (`_cardTypeIds`) to dynamically register, track, and enumerate all supported TCG card types without duplicates.
+* **Oracle Updates**:
+  - Authorized `ORACLE_ROLE` accounts update prices via `setPrice(bytes32 cardTypeId, uint128 price)` or `setBatchPrices(bytes32[] cardTypeIds, uint128[] prices)`.
+  - Emits `PriceUpdated(cardTypeId, price, timestamp)` events.
+* **Synchronous On-Chain Consumption**:
+  - `HoloFiVaultLoanCore` directly and synchronously queries `priceFeed.getPrice(cardTypeId)` during `borrow()`, `withdrawCollateral()`, and `startLiquidation()`, with normalization to target token decimals performed via `DecimalMath`.
 
 
 
@@ -258,9 +245,8 @@ $$\text{MaxBorrow} = \text{Vault FMV} \times \frac{\text{maxLtvBps}}{10000}$$
 
 * **Multi-Asset Pool Factory (`HoloFiLendingPoolFactory`)**:
   - Centralized factory for deploying and registering permissioned `HoloFiLendingPool` instances.
-  - Pool deployment via `createPool(IERC20 asset, string calldata name, string calldata symbol, uint256 maxLtvBps, uint256 liquidationThresholdBps, uint256 liquidationPenaltyBps, uint256 borrowRateBpsPerYear)` is restricted to `ADMIN_ROLE` in `AccessControlManager`.
-  - Maintains an on-chain lookup mapping `mapping(address => address) public getPool` (`underlyingAsset => poolAddress`), `mapping(address => bool) public isValidPool`, and array `address[] public allPools`.
-  - Prevents duplicate pool creation per underlying asset, reverting with `PoolAlreadyExists(underlyingAsset, existingPool)`.
+  - Maintains on-chain lookup mappings: `mapping(address => address[]) public poolsByAsset`, `mapping(address => bool) public isValidPool`, and `address[] public allPools`.
+  - Supports deploying multiple distinct pools per underlying asset with customized risk parameters and collateral eligibility tiers.
   - Automatically marks `isValidPool[pool] = true` upon instantiation for protocol security verification.
 
 * **Permissioned ERC-4626 Lending Pool (`HoloFiLendingPool`)**:
