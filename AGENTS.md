@@ -20,3 +20,8 @@
 - If the commit relates to any Linear issue → Must use `[Magic Word] [TEAM-123]` in the commit message:
   - **Closing magic words** (for final task commits): `fix`, `fixes`, `fixed`, `close`, `closes`, `closed`, `resolve`, `resolves`, `resolved`, `complete`, `completes`, `completed`.
   - **Non-closing magic words** (for specs/plans/intermediate commits): `ref`, `refs`, `relates to`, `related to`, `part of`, `toward`, `towards`.
+
+## Code Documentation & NatSpec
+- Use standard Solidity NatSpec (`///`) with `@author Peng Du` for key contracts, functions, variables, and events.
+- Follow ASD-STE100 Simplified Technical English: use active voice, short sentences, simple verbs, and place conditions before actions.
+

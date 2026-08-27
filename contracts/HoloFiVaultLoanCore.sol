@@ -11,13 +11,15 @@ import { HoloFiCardPriceFeed } from "./HoloFiCardPriceFeed.sol";
 import { HoloFiLendingPool } from "./HoloFiLendingPool.sol";
 import { HoloFiLendingPoolFactory } from "./HoloFiLendingPoolFactory.sol";
 
-/**
- * @title HoloFiVaultLoanCore
- * @notice Core credit manager and collateral escrow contract for HoloFi protocol.
- */
+/// @title HoloFiVaultLoanCore
+/// @author Peng Du
+/// @notice Manages collateral vaults, loan disbursement, interest accrual, and liquidations.
+/// @dev Holds physical card NFTs in escrow and coordinates borrowing from lending pools.
 contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
+    /// @notice Lifecycle status of a collateral vault.
     enum VaultStatus { Active, Liquidating, Closed }
 
+    /// @notice Stores collateral positions and outstanding debt for a vault.
     struct CollateralVault {
         uint256 vaultId;
         address owner;               // Store wallet address
@@ -29,23 +31,63 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         VaultStatus status;
     }
 
+    /// @notice The access control manager contract instance.
     AccessControlManager public immutable acm;
+
+    /// @notice The ERC-721 vault card token contract.
     HoloFiVaultCard public immutable vaultCard;
+
+    /// @notice The lending pool factory registry.
     HoloFiLendingPoolFactory public immutable poolFactory;
+
+    /// @notice The oracle price feed for collateral valuations.
     HoloFiCardPriceFeed public immutable priceFeed;
 
+    /// @notice Maps a vault identifier to its CollateralVault record.
     mapping(uint256 => CollateralVault) public vaults;
+
+    /// @notice Maps a card token identifier to its assigned vault identifier.
     mapping(uint256 => uint256) public nftVaultId;
+
+    /// @notice Next vault identifier to assign.
     uint256 public nextVaultId = 1;
+
+    /// @notice Address of the authorized Dutch auction liquidation contract.
     address public dutchAuction;
 
+    /// @notice Basis points denominator representing 100%.
     uint256 public constant BPS_DENOMINATOR = 10000;
+
+    /// @notice Standard number of seconds in a 365-day year for interest calculation.
     uint256 public constant SECONDS_PER_YEAR = 365 days;
+
+    /// @notice Fixed-point precision multiplier (1e18) for health factor calculations.
     uint256 public constant HEALTH_FACTOR_PRECISION = 1e18;
 
+    /// @notice Emitted when a new collateral vault is created.
+    /// @param vaultId Unique identifier of the created vault.
+    /// @param owner Address of the vault owner.
+    /// @param lendingPool Address of the bound lending pool.
     event VaultCreated(uint256 indexed vaultId, address indexed owner, address indexed lendingPool);
+
+    /// @notice Emitted when card NFTs are deposited into a vault.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param owner Address of the vault owner.
+    /// @param tokenIds Array of deposited NFT token IDs.
     event CollateralDeposited(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
+
+    /// @notice Emitted when card NFTs are withdrawn from a vault.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param owner Address of the vault owner.
+    /// @param tokenIds Array of withdrawn NFT token IDs.
     event CollateralWithdrawn(uint256 indexed vaultId, address indexed owner, uint256[] tokenIds);
+
+    /// @notice Emitted when a borrower draws funds against collateral.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param owner Address of the borrowing owner.
+    /// @param lendingPool Address of the lending pool providing funds.
+    /// @param amount Amount of underlying assets borrowed.
+    /// @param newPrincipalDebt Updated principal debt of the vault.
     event BorrowExecuted(
         uint256 indexed vaultId,
         address indexed owner,
@@ -53,12 +95,28 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         uint256 amount,
         uint256 newPrincipalDebt
     );
+
+    /// @notice Emitted when unpaid interest is accrued on a vault.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param interestAccrued Amount of newly accrued interest.
+    /// @param totalAccumulatedInterest Updated total accumulated interest.
+    /// @param timestamp Block timestamp of the accrual.
     event InterestAccrued(
         uint256 indexed vaultId,
         uint256 interestAccrued,
         uint256 totalAccumulatedInterest,
         uint256 timestamp
     );
+
+    /// @notice Emitted when debt is repaid for a vault.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param payer Address providing repayment funds.
+    /// @param lendingPool Address of the repaid lending pool.
+    /// @param totalRepaid Total amount paid.
+    /// @param interestPaid Interest portion repaid.
+    /// @param principalPaid Principal portion repaid.
+    /// @param remainingPrincipalDebt Remaining principal debt.
+    /// @param remainingAccumulatedInterest Remaining accumulated interest.
     event RepaymentExecuted(
         uint256 indexed vaultId,
         address indexed payer,
@@ -69,34 +127,121 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         uint256 remainingPrincipalDebt,
         uint256 remainingAccumulatedInterest
     );
+
+    /// @notice Emitted when the Dutch auction liquidator address is updated.
+    /// @param newAuction Address of the new Dutch auction contract.
     event DutchAuctionUpdated(address indexed newAuction);
+
+    /// @notice Emitted when liquidation starts for an undercollateralized vault.
+    /// @param vaultId Unique identifier of the liquidating vault.
     event VaultLiquidationStarted(uint256 indexed vaultId);
+
+    /// @notice Emitted when a liquidation is completed and collateral transferred.
+    /// @param vaultId Unique identifier of the liquidated vault.
+    /// @param liquidator Address of the buyer receiving collateral.
     event VaultLiquidated(uint256 indexed vaultId, address indexed liquidator);
 
+    /// @notice Reverts when the access control manager address is zero.
     error ZeroAddressACM();
+
+    /// @notice Reverts when the vault card contract address is zero.
     error ZeroAddressVaultCard();
+
+    /// @notice Reverts when the pool factory contract address is zero.
     error ZeroAddressPoolFactory();
+
+    /// @notice Reverts when the price feed contract address is zero.
     error ZeroAddressPriceFeed();
+
+    /// @notice Reverts when a lending pool is not registered in the factory.
+    /// @param pool Address of the unregistered pool.
     error UnregisteredLendingPool(address pool);
+
+    /// @notice Reverts when caller lacks required KYB verification.
+    /// @param caller Address of the unverified caller.
     error KybRequired(address caller);
+
+    /// @notice Reverts when caller is not the owner of the vault.
+    /// @param vaultId Unique identifier of the target vault.
+    /// @param caller Address of the unauthorized caller.
     error UnauthorizedVaultOwner(uint256 vaultId, address caller);
+
+    /// @notice Reverts when vault is not in active status.
+    /// @param vaultId Unique identifier of the inactive vault.
     error VaultNotActive(uint256 vaultId);
+
+    /// @notice Reverts when attempting an operation blocked by active debt.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param totalDebt Outstanding total debt amount.
     error VaultHasActiveDebt(uint256 vaultId, uint256 totalDebt);
+
+    /// @notice Reverts when an input array of token IDs is empty.
     error EmptyTokenIdsList();
+
+    /// @notice Reverts when a card NFT is already deposited in another vault.
+    /// @param tokenId The duplicate token identifier.
+    /// @param existingVaultId Identifier of the vault currently holding the token.
     error TokenAlreadyInVault(uint256 tokenId, uint256 existingVaultId);
+
+    /// @notice Reverts when a card NFT is not found in the specified vault.
+    /// @param tokenId The missing token identifier.
+    /// @param vaultId Target vault identifier.
     error TokenNotInVault(uint256 tokenId, uint256 vaultId);
+
+    /// @notice Reverts when caller lacks the admin role.
+    /// @param caller Address of the unauthorized caller.
     error UnauthorizedAdmin(address caller);
+
+    /// @notice Reverts when caller lacks the pauser role.
+    /// @param caller Address of the unauthorized caller.
     error UnauthorizedPauser(address caller);
+
+    /// @notice Reverts when attempting to borrow zero tokens.
     error ZeroBorrowAmount();
+
+    /// @notice Reverts when requested borrowing exceeds vault capacity.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param requestedTotalDebt Resulting debt if borrow succeeds.
+    /// @param maxBorrowCapacity Maximum borrowing capacity allowed.
     error ExceedsMaxBorrowCapacity(uint256 vaultId, uint256 requestedTotalDebt, uint256 maxBorrowCapacity);
+
+    /// @notice Reverts when attempting to repay zero tokens.
     error ZeroRepayAmount();
+
+    /// @notice Reverts when attempting repayment on a vault with zero debt.
+    /// @param vaultId Unique identifier of the debt-free vault.
     error NoActiveDebt(uint256 vaultId);
+
+    /// @notice Reverts when collateral withdrawal violates maximum borrowing limits.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param totalDebt Active debt amount.
+    /// @param remainingMaxBorrow Remaining borrowing capacity after withdrawal.
     error InsufficientCollateralRatio(uint256 vaultId, uint256 totalDebt, uint256 remainingMaxBorrow);
+
+    /// @notice Reverts when caller is not the authorized Dutch auction contract.
+    /// @param caller Address of the unauthorized caller.
     error UnauthorizedAuction(address caller);
+
+    /// @notice Reverts when attempting liquidation on a vault with health factor >= 1.0.
+    /// @param vaultId Unique identifier of the solvent vault.
+    /// @param healthFactor Calculated health factor scaled by 1e18.
     error VaultNotEligibleForLiquidation(uint256 vaultId, uint256 healthFactor);
+
+    /// @notice Reverts when finalizing liquidation on a vault not in liquidating status.
+    /// @param vaultId Unique identifier of the vault.
     error VaultNotLiquidating(uint256 vaultId);
+
+    /// @notice Reverts when card type is disallowed by the pool eligibility policy.
+    /// @param tokenId Token identifier of the card.
+    /// @param cardTypeId Card type key.
+    /// @param lendingPool Address of the restrictive lending pool.
     error IneligibleCollateral(uint256 tokenId, bytes32 cardTypeId, address lendingPool);
 
+    /// @notice Initializes the loan core contract with protocol dependencies.
+    /// @param _acm Address of the AccessControlManager contract.
+    /// @param _vaultCard Address of the HoloFiVaultCard contract.
+    /// @param _poolFactory Address of the HoloFiLendingPoolFactory contract.
+    /// @param _priceFeed Address of the HoloFiCardPriceFeed contract.
     constructor(address _acm, address _vaultCard, address _poolFactory, address _priceFeed) {
         if (_acm == address(0)) {
             revert ZeroAddressACM();
@@ -116,6 +261,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         priceFeed = HoloFiCardPriceFeed(_priceFeed);
     }
 
+    /// @notice Pauses vault creations, collateral deposits, and borrows.
+    /// @dev Caller must have PAUSER_ROLE or ADMIN_ROLE.
     function pause() external {
         if (!acm.hasRole(acm.PAUSER_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedPauser(msg.sender);
@@ -123,6 +270,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         _pause();
     }
 
+    /// @notice Resumes loan core operations.
+    /// @dev Caller must have ADMIN_ROLE.
     function unpause() external {
         if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedAdmin(msg.sender);
@@ -130,6 +279,8 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         _unpause();
     }
 
+    /// @notice Sets the Dutch auction contract authorized to liquidate defaulted vaults.
+    /// @param _dutchAuction Address of the HoloFiDutchAuction contract.
     function setDutchAuction(address _dutchAuction) external {
         if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedAdmin(msg.sender);
@@ -138,6 +289,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         emit DutchAuctionUpdated(_dutchAuction);
     }
 
+    /// @notice Accrues unpaid borrow interest for a specific vault up to the current block timestamp.
+    /// @dev Calculates simple annual interest based on the lending pool borrow rate.
+    /// @param vaultId Unique identifier of the vault to update.
     function accrueInterest(uint256 vaultId) public {
         CollateralVault storage vault = vaults[vaultId];
         uint256 dt = block.timestamp - vault.lastInterestUpdateTime;
@@ -164,6 +318,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         }
     }
 
+    /// @notice Calculates pending unaccrued interest since the last update.
+    /// @param vaultId Unique identifier of the vault.
+    /// @return The pending interest amount in the pool asset precision.
     function getPendingInterest(uint256 vaultId) public view returns (uint256) {
         CollateralVault memory vault = vaults[vaultId];
         uint256 dt = block.timestamp - vault.lastInterestUpdateTime;
@@ -173,11 +330,19 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         return (vault.principalDebt * borrowRate * dt) / (BPS_DENOMINATOR * SECONDS_PER_YEAR);
     }
 
+    /// @notice Calculates total debt including principal, accumulated interest, and pending interest.
+    /// @param vaultId Unique identifier of the vault.
+    /// @return Total outstanding debt denominated in the pool asset.
     function getTotalDebt(uint256 vaultId) public view returns (uint256) {
         CollateralVault memory vault = vaults[vaultId];
         return vault.principalDebt + vault.accumulatedInterest + getPendingInterest(vaultId);
     }
 
+    /// @notice Computes the health factor of a vault based on total collateral value and debt.
+    /// @dev If total debt is zero, returns type(uint256).max.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param vaultFmv Fair market value of all collateral in 18-decimal USD.
+    /// @return The calculated health factor scaled by 1e18.
     function getHealthFactor(uint256 vaultId, uint256 vaultFmv) public view returns (uint256) {
         uint256 totalDebt = getTotalDebt(vaultId);
         if (totalDebt == 0) {
@@ -190,6 +355,10 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         return (normalizedFmv * ltBps * HEALTH_FACTOR_PRECISION) / (totalDebt * BPS_DENOMINATOR);
     }
 
+    /// @notice Calculates maximum borrowing capacity based on collateral FMV and pool max LTV.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param vaultFmv Total collateral fair market value in 18-decimal USD.
+    /// @return Maximum borrow amount normalized to the pool asset precision.
     function getMaxBorrowCapacity(uint256 vaultId, uint256 vaultFmv) public view returns (uint256) {
         address pool = vaults[vaultId].lendingPool;
         address asset = HoloFiLendingPool(pool).asset();
@@ -207,6 +376,10 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         return IERC721Receiver.onERC721Received.selector;
     }
 
+    /// @notice Creates a new collateral vault bound to a verified lending pool.
+    /// @dev The caller must have approved KYB status.
+    /// @param lendingPool Address of the target lending pool.
+    /// @return vaultId Unique identifier assigned to the new vault.
     function createVault(address lendingPool) external whenNotPaused returns (uint256 vaultId) {
         if (!acm.isKybApproved(msg.sender)) {
             revert KybRequired(msg.sender);
@@ -230,6 +403,10 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         emit VaultCreated(vaultId, msg.sender, lendingPool);
     }
 
+    /// @notice Deposits card NFTs into an active vault as loan collateral.
+    /// @dev Locks the deposited NFTs and verifies pool collateral eligibility.
+    /// @param vaultId Unique identifier of the recipient vault.
+    /// @param tokenIds Array of NFT card token identifiers to deposit.
     function depositCollateral(uint256 vaultId, uint256[] calldata tokenIds) external nonReentrant whenNotPaused {
         CollateralVault storage vault = vaults[vaultId];
         if (vault.owner != msg.sender) {
@@ -322,6 +499,10 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         emit CollateralWithdrawn(vaultId, vault.owner, tokenIds);
     }
 
+    /// @notice Withdraws collateral NFTs from an active vault.
+    /// @dev If the vault has active debt, remaining collateral must satisfy the LTV requirement.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param tokenIds Array of NFT card token identifiers to withdraw.
     function withdrawCollateral(uint256 vaultId, uint256[] calldata tokenIds) external nonReentrant {
         _withdrawCollateral(vaultId, tokenIds);
     }
@@ -370,10 +551,18 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         );
     }
 
+    /// @notice Repays outstanding debt for a vault.
+    /// @dev Pays accumulated interest first, then reduces principal debt.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param amount Maximum amount of tokens to repay.
     function repay(uint256 vaultId, uint256 amount) external nonReentrant {
         _repay(vaultId, amount);
     }
 
+    /// @notice Repays debt and withdraws collateral in a single transaction.
+    /// @param vaultId Unique identifier of the vault.
+    /// @param repayAmount Amount of debt to repay.
+    /// @param withdrawTokenIds Array of card token IDs to withdraw.
     function repayAndWithdraw(
         uint256 vaultId,
         uint256 repayAmount,
@@ -394,6 +583,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         }
     }
 
+    /// @notice Calculates total 18-decimal USD fair market value of all cards in a vault.
+    /// @param vaultId Unique identifier of the vault.
+    /// @return totalFmv Sum of individual card prices from the price feed.
     function getVaultFMV(uint256 vaultId) public view returns (uint256 totalFmv) {
         uint256[] memory tokenIds = vaults[vaultId].tokenIds;
         for (uint256 i = 0; i < tokenIds.length; i++) {
@@ -404,6 +596,10 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         }
     }
 
+    /// @notice Borrows underlying tokens from the lending pool against deposited collateral.
+    /// @dev Total resulting debt must not exceed the vault maximum borrow capacity.
+    /// @param vaultId Unique identifier of the borrowing vault.
+    /// @param amount Amount of underlying tokens to borrow.
     function borrow(uint256 vaultId, uint256 amount) external nonReentrant whenNotPaused {
         CollateralVault storage vault = vaults[vaultId];
         if (msg.sender != vault.owner) {
@@ -436,6 +632,9 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         emit BorrowExecuted(vaultId, vault.owner, vault.lendingPool, amount, vault.principalDebt);
     }
 
+    /// @notice Initiates liquidation of an undercollateralized vault.
+    /// @dev Only the authorized Dutch auction contract can call this function.
+    /// @param vaultId Unique identifier of the vault to liquidate.
     function startLiquidation(uint256 vaultId) external nonReentrant whenNotPaused {
         if (msg.sender != dutchAuction) {
             revert UnauthorizedAuction(msg.sender);
@@ -458,6 +657,10 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         emit VaultLiquidationStarted(vaultId);
     }
 
+    /// @notice Finalizes liquidation, transfers collateral to liquidator, and closes the vault.
+    /// @dev Only the authorized Dutch auction contract can call this function.
+    /// @param vaultId Unique identifier of the liquidated vault.
+    /// @param liquidator Address receiving the unlocked collateral NFTs.
     function finalizeLiquidation(uint256 vaultId, address liquidator) external nonReentrant whenNotPaused {
         if (msg.sender != dutchAuction) {
             revert UnauthorizedAuction(msg.sender);
@@ -484,10 +687,16 @@ contract HoloFiVaultLoanCore is IERC721Receiver, ReentrancyGuard, Pausable {
         emit VaultLiquidated(vaultId, liquidator);
     }
 
+    /// @notice Retrieves the CollateralVault struct for a specified vault.
+    /// @param vaultId Unique identifier of the vault.
+    /// @return The CollateralVault record.
     function getVault(uint256 vaultId) external view returns (CollateralVault memory) {
         return vaults[vaultId];
     }
 
+    /// @notice Returns all card token IDs currently deposited in a vault.
+    /// @param vaultId Unique identifier of the vault.
+    /// @return Array of NFT token IDs in the vault.
     function getVaultTokenIds(uint256 vaultId) external view returns (uint256[] memory) {
         return vaults[vaultId].tokenIds;
     }

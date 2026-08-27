@@ -7,33 +7,69 @@ import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { AccessControlManager } from "./AccessControlManager.sol";
 import { ICardEligibilityPolicy } from "./interfaces/ICardEligibilityPolicy.sol";
 
+/// @dev Minimal interface to query the Dutch auction contract from LoanCore.
 interface IHoloFiVaultLoanCore {
     function dutchAuction() external view returns (address);
 }
 
-/**
- * @title HoloFiLendingPool
- * @notice Generic permissioned ERC-4626 liquidity pool issuing custom pToken share tokens against ERC-20 deposits.
- */
+/// @title HoloFiLendingPool
+/// @author Peng Du
+/// @notice ERC-4626 liquidity pool supplying credit against vaulted card collateral.
+/// @dev Issues non-transferable pToken shares to liquidity providers.
 contract HoloFiLendingPool is ERC4626, Pausable {
     using SafeERC20 for IERC20;
 
+    /// @notice Basis points denominator representing 100%.
     uint256 public constant BPS_DENOMINATOR = 10000;
 
+    /// @notice The access control manager contract instance.
     AccessControlManager public immutable acm;
+
+    /// @notice Address of the authorized HoloFiVaultLoanCore contract.
     address public loanCore;
+
+    /// @notice Address of the optional card eligibility policy contract.
     address public eligibilityPolicy;
 
-    uint256 public maxLtvBps;                // Max LTV (e.g. 5000 = 50.00%)
-    uint256 public liquidationThresholdBps; // Liquidation Threshold (e.g. 7000 = 70.00%)
-    uint256 public liquidationPenaltyBps;   // Liquidation Penalty (e.g. 1000 = 10.00%)
-    uint256 public borrowRateBpsPerYear;      // Borrow Rate APY (e.g. 500 = 5.00%)
-    uint256 public totalBorrows;              // Outstanding borrowed capital in loan core
+    /// @notice Maximum loan-to-value ratio allowed for borrowing, in basis points.
+    uint256 public maxLtvBps;
 
+    /// @notice Liquidation threshold ratio in basis points.
+    uint256 public liquidationThresholdBps;
+
+    /// @notice Liquidation penalty percentage charged to defaulting borrowers, in basis points.
+    uint256 public liquidationPenaltyBps;
+
+    /// @notice Annual borrow interest rate in basis points per year.
+    uint256 public borrowRateBpsPerYear;
+
+    /// @notice Total outstanding principal borrowed across all active vaults.
+    uint256 public totalBorrows;
+
+    /// @notice Emitted when the loan core contract address is updated.
+    /// @param newLoanCore Address of the new loan core contract.
     event LoanCoreUpdated(address indexed newLoanCore);
+
+    /// @notice Emitted when the card eligibility policy address is updated.
+    /// @param newPolicy Address of the new card eligibility policy.
     event EligibilityPolicyUpdated(address indexed newPolicy);
+
+    /// @notice Emitted when liquidity is disbursed for a borrow operation.
+    /// @param borrower Address receiving the borrowed tokens.
+    /// @param amount Amount of underlying assets disbursed.
     event LiquidityDrawn(address indexed borrower, uint256 amount);
+
+    /// @notice Emitted when liquidity is returned to the pool from a loan repayment.
+    /// @param payer Address providing the repayment tokens.
+    /// @param principalAmount Amount of principal debt repaid.
+    /// @param totalAmount Total payment amount including interest and fees.
     event LiquidityReturned(address indexed payer, uint256 principalAmount, uint256 totalAmount);
+
+    /// @notice Emitted when pool risk and interest rate parameters are updated.
+    /// @param maxLtvBps New maximum loan-to-value ratio in basis points.
+    /// @param liquidationThresholdBps New liquidation threshold in basis points.
+    /// @param liquidationPenaltyBps New liquidation penalty in basis points.
+    /// @param borrowRateBpsPerYear New annual borrow interest rate in basis points.
     event RiskParametersUpdated(
         uint256 maxLtvBps,
         uint256 liquidationThresholdBps,
@@ -41,19 +77,58 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         uint256 borrowRateBpsPerYear
     );
 
+    /// @notice Reverts when a mint or redeem operation specifies zero shares.
     error ZeroShares();
+
+    /// @notice Reverts when a deposit or withdraw operation specifies zero assets.
     error ZeroAssets();
+
+    /// @notice Reverts when the underlying asset address is zero.
     error ZeroAddressAsset();
+
+    /// @notice Reverts when the access control manager address is zero.
     error ZeroAddressACM();
+
+    /// @notice Reverts when setting the loan core address to zero.
     error ZeroAddressLoanCore();
+
+    /// @notice Reverts when caller is not the authorized loan core contract or admin.
+    /// @param caller The address of the unauthorized caller.
     error UnauthorizedLoanCore(address caller);
+
+    /// @notice Reverts when caller lacks the admin role.
+    /// @param caller The address of the unauthorized caller.
     error UnauthorizedAdmin(address caller);
+
+    /// @notice Reverts when caller lacks the pauser role.
+    /// @param caller The address of the unauthorized caller.
     error UnauthorizedPauser(address caller);
+
+    /// @notice Reverts when pool cash reserves cannot cover the draw amount.
+    /// @param available Current token balance in the pool.
+    /// @param required Requested liquidity amount.
     error InsufficientVaultLiquidity(uint256 available, uint256 required);
+
+    /// @notice Reverts when attempting peer-to-peer transfers of pToken shares.
     error ShareTokenNonTransferable();
+
+    /// @notice Reverts when configured risk parameters violate safety invariants.
     error InvalidRiskParameters();
+
+    /// @notice Reverts when principal repayment amount exceeds total repayment amount.
+    /// @param principalAmount Principal portion to repay.
+    /// @param totalAmount Total amount offered for repayment.
     error InvalidRepaymentAmounts(uint256 principalAmount, uint256 totalAmount);
 
+    /// @notice Initializes the lending pool with underlying asset and risk parameters.
+    /// @param asset_ The underlying ERC-20 token.
+    /// @param name_ Name of the share token.
+    /// @param symbol_ Symbol of the share token.
+    /// @param _acm AccessControlManager address.
+    /// @param _maxLtvBps Maximum loan-to-value ratio in basis points.
+    /// @param _liquidationThresholdBps Liquidation threshold in basis points.
+    /// @param _liquidationPenaltyBps Liquidation penalty in basis points.
+    /// @param _borrowRateBpsPerYear Annual borrow interest rate in basis points.
     constructor(
         IERC20 asset_,
         string memory name_,
@@ -80,6 +155,11 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         borrowRateBpsPerYear = _borrowRateBpsPerYear;
     }
 
+    /// @notice Updates the risk and interest rate parameters for this pool.
+    /// @param _maxLtvBps Maximum loan-to-value ratio in basis points.
+    /// @param _liquidationThresholdBps Liquidation threshold ratio in basis points.
+    /// @param _liquidationPenaltyBps Liquidation penalty in basis points.
+    /// @param _borrowRateBpsPerYear Annual borrow rate in basis points.
     function setRiskParameters(
         uint256 _maxLtvBps,
         uint256 _liquidationThresholdBps,
@@ -99,6 +179,8 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         emit RiskParametersUpdated(_maxLtvBps, _liquidationThresholdBps, _liquidationPenaltyBps, _borrowRateBpsPerYear);
     }
 
+    /// @notice Sets the loan core contract authorized to draw and return liquidity.
+    /// @param _loanCore Address of the HoloFiVaultLoanCore contract.
     function setLoanCore(address _loanCore) external {
         if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedAdmin(msg.sender);
@@ -111,6 +193,8 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         emit LoanCoreUpdated(_loanCore);
     }
 
+    /// @notice Sets the card eligibility policy contract for collateral validation.
+    /// @param _policy Address of the card eligibility policy.
     function setEligibilityPolicy(address _policy) external {
         if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedAdmin(msg.sender);
@@ -119,6 +203,10 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         emit EligibilityPolicyUpdated(_policy);
     }
 
+    /// @notice Checks if a card type is accepted as collateral by this pool.
+    /// @dev If no eligibility policy is set, all card types are allowed.
+    /// @param cardTypeId Unique identifier of the card type.
+    /// @return True if the card type is accepted as collateral.
     function isCollateralAllowed(bytes32 cardTypeId) public view returns (bool) {
         if (eligibilityPolicy == address(0)) {
             return true;
@@ -126,10 +214,14 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         return ICardEligibilityPolicy(eligibilityPolicy).isCardTypeEligible(cardTypeId);
     }
 
+    /// @notice Returns total assets managed by the pool, including cash reserves and active loans.
+    /// @return Total pool assets in underlying token precision.
     function totalAssets() public view virtual override returns (uint256) {
         return super.totalAssets() + totalBorrows;
     }
 
+    /// @notice Pauses pool deposits, mints, and borrows.
+    /// @dev Caller must have PAUSER_ROLE or ADMIN_ROLE.
     function pause() external {
         if (!acm.hasRole(acm.PAUSER_ROLE(), msg.sender) && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedPauser(msg.sender);
@@ -137,6 +229,8 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         _pause();
     }
 
+    /// @notice Resumes pool operations.
+    /// @dev Caller must have ADMIN_ROLE.
     function unpause() external {
         if (!acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedAdmin(msg.sender);
@@ -172,6 +266,10 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         return super.redeem(shares, receiver, owner);
     }
 
+    /// @notice Draws liquidity from pool reserves for loan disbursement.
+    /// @dev Only the authorized loan core contract or admin can call this function.
+    /// @param recipient Address receiving the borrowed assets.
+    /// @param amount Amount of underlying assets to transfer.
     function drawLiquidity(address recipient, uint256 amount) external whenNotPaused {
         if (msg.sender != loanCore && !acm.hasRole(acm.ADMIN_ROLE(), msg.sender)) {
             revert UnauthorizedLoanCore(msg.sender);
@@ -186,6 +284,11 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         emit LiquidityDrawn(recipient, amount);
     }
 
+    /// @notice Returns liquidity to the pool during loan repayment or liquidation.
+    /// @dev Reduces totalBorrows by the principal amount and pulls total payment from payer.
+    /// @param payer Address providing the repayment tokens.
+    /// @param principalAmount Principal debt portion to reduce from active borrows.
+    /// @param totalAmount Total payment amount including accrued interest and penalties.
     function returnLiquidity(address payer, uint256 principalAmount, uint256 totalAmount) external {
         if (principalAmount > totalAmount) {
             revert InvalidRepaymentAmounts(principalAmount, totalAmount);
@@ -233,9 +336,7 @@ contract HoloFiLendingPool is ERC4626, Pausable {
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 
-    /**
-     * @dev Introduces a 3-decimal offset (10^3 virtual shares) to mitigate ERC-4626 inflation and donation attacks.
-     */
+    /// @dev Introduces a 3-decimal offset (10^3 virtual shares) to mitigate ERC-4626 inflation and donation attacks.
     function _decimalsOffset() internal view virtual override returns (uint8) {
         return 3;
     }
